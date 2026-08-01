@@ -1,0 +1,64 @@
+Date : 2026-07-23 09:15:00
+Directory : c:\Users\webst\Documents\GitHub\wmtt4mc
+Total : 28 files,  23563 codes, 870 comments, 1694 blanks, all 26127 lines
+
+Languages
++--------------------+------------+------------+------------+------------+------------+
+| language           | files      | code       | comment    | blank      | total      |
++--------------------+------------+------------+------------+------------+------------+
+| JSON               |          6 |     11,729 |          0 |          2 |     11,731 |
+| Python             |          9 |     11,513 |        869 |      1,568 |     13,950 |
+| Markdown           |         10 |        258 |          0 |        110 |        368 |
+| YAML               |          1 |         46 |          1 |         12 |         59 |
+| JSON with Comments |          1 |         12 |          0 |          1 |         13 |
+| pip requirements   |          1 |          5 |          0 |          1 |          6 |
++--------------------+------------+------------+------------+------------+------------+
+
+Directories
++------------------------------------------------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
+| path                                                                                                                   | files      | code       | comment    | blank      | total      |
++------------------------------------------------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
+| .                                                                                                                      |         28 |     23,563 |        870 |      1,694 |     26,127 |
+| . (Files)                                                                                                              |         23 |     23,228 |        869 |      1,673 |     25,770 |
+| .github                                                                                                                |          1 |         46 |          1 |         12 |         59 |
+| .github\workflows                                                                                                      |          1 |         46 |          1 |         12 |         59 |
+| phase2_compare                                                                                                         |          4 |        289 |          0 |          9 |        298 |
+| phase2_compare (Files)                                                                                                 |          3 |        165 |          0 |          9 |        174 |
+| phase2_compare\preflight_smoke                                                                                         |          1 |        124 |          0 |          0 |        124 |
+| phase2_compare\preflight_smoke\preflight_20260421-133344                                                               |          1 |        124 |          0 |          0 |        124 |
++------------------------------------------------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
+
+Files
++------------------------------------------------------------------------------------------------------------------------+--------------------+------------+------------+------------+------------+
+| filename                                                                                                               | language           | code       | comment    | blank      | total      |
++------------------------------------------------------------------------------------------------------------------------+--------------------+------------+------------+------------+------------+
+| c:\Users\webst\Documents\GitHub\wmtt4mc\.github\workflows\release.yml                                                  | YAML               |         46 |          1 |         12 |         59 |
+| c:\Users\webst\Documents\GitHub\wmtt4mc\CHANGELOG.md                                                                   | Markdown           |         41 |          0 |         14 |         55 |
+| c:\Users\webst\Documents\GitHub\wmtt4mc\COMMERCIAL_LICENSE.md                                                          | Markdown           |         23 |          0 |          8 |         31 |
+| c:\Users\webst\Documents\GitHub\wmtt4mc\CONTRIBUTING.md                                                                | Markdown           |          7 |          0 |          4 |         11 |
+| c:\Users\webst\Documents\GitHub\wmtt4mc\LICENSE-NC.md                                                                  | Markdown           |         51 |          0 |         26 |         77 |
+| c:\Users\webst\Documents\GitHub\wmtt4mc\NOTICE.md                                                                      | Markdown           |         21 |          0 |          8 |         29 |
+| c:\Users\webst\Documents\GitHub\wmtt4mc\README.md                                                                      | Markdown           |         29 |          0 |         18 |         47 |
+| c:\Users\webst\Documents\GitHub\wmtt4mc\SECURITY.md                                                                    | Markdown           |          6 |          0 |          3 |          9 |
+| c:\Users\webst\Documents\GitHub\wmtt4mc\TRADEMARK_POLICY.md                                                            | Markdown           |         21 |          0 |          9 |         30 |
+| c:\Users\webst\Documents\GitHub\wmtt4mc\development_check.py                                                           | Python             |         39 |          1 |          8 |         48 |
+| c:\Users\webst\Documents\GitHub\wmtt4mc\development_report.json                                                        | JSON               |        111 |          0 |          0 |        111 |
+| c:\Users\webst\Documents\GitHub\wmtt4mc\palette.json                                                                   | JSON               |      5,675 |          0 |          0 |      5,675 |
+| c:\Users\webst\Documents\GitHub\wmtt4mc\palette_map_wiki.json                                                          | JSON               |      5,683 |          0 |          0 |      5,683 |
+| c:\Users\webst\Documents\GitHub\wmtt4mc\phase2_compare\baseline_af4cf4e_discovery.json                                 | JSON               |         68 |          0 |          1 |         69 |
+| c:\Users\webst\Documents\GitHub\wmtt4mc\phase2_compare\head_discovery.json                                             | JSON               |         68 |          0 |          1 |         69 |
+| c:\Users\webst\Documents\GitHub\wmtt4mc\phase2_compare\phase2_ab_report_2026-04-21.md                                  | Markdown           |         29 |          0 |          7 |         36 |
+| c:\Users\webst\Documents\GitHub\wmtt4mc\phase2_compare\preflight_smoke\preflight_20260421-133344\preflight_report.json | JSON               |        124 |          0 |          0 |        124 |
+| c:\Users\webst\Documents\GitHub\wmtt4mc\requirements.txt                                                               | pip requirements   |          5 |          0 |          1 |          6 |
+| c:\Users\webst\Documents\GitHub\wmtt4mc\run_basic_tests.py                                                             | Python             |         83 |         16 |         23 |        122 |
+| c:\Users\webst\Documents\GitHub\wmtt4mc\simple_check.py                                                                | Python             |        277 |         29 |         64 |        370 |
+| c:\Users\webst\Documents\GitHub\wmtt4mc\test_cache_discovery.py                                                        | Python             |        198 |         59 |         73 |        330 |
+| c:\Users\webst\Documents\GitHub\wmtt4mc\test_syntax.py                                                                 | Python             |         17 |          4 |          4 |         25 |
+| c:\Users\webst\Documents\GitHub\wmtt4mc\test_wiki_palette_mapping.py                                                   | Python             |         92 |          0 |         21 |        113 |
+| c:\Users\webst\Documents\GitHub\wmtt4mc\wishlist.md                                                                    | Markdown           |         30 |          0 |         13 |         43 |
+| c:\Users\webst\Documents\GitHub\wmtt4mc\wmtt4mc.code-workspace                                                         | JSON with Comments |         12 |          0 |          1 |         13 |
+| c:\Users\webst\Documents\GitHub\wmtt4mc\wmtt4mc.py                                                                     | Python             |     10,037 |        601 |      1,253 |     11,891 |
+| c:\Users\webst\Documents\GitHub\wmtt4mc\wmtt4mc_cache.py                                                               | Python             |        597 |        156 |        116 |        869 |
+| c:\Users\webst\Documents\GitHub\wmtt4mc\worker_fn_module.py                                                            | Python             |        173 |          3 |          6 |        182 |
+| Total                                                                                                                  |                    |     23,563 |        870 |      1,694 |     26,127 |
++------------------------------------------------------------------------------------------------------------------------+--------------------+------------+------------+------------+------------+

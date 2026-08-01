@@ -469,6 +469,16 @@
       25,
       25
     ],
+    "minecraft:black_wool_slab": [
+      25,
+      25,
+      25
+    ],
+    "minecraft:black_wool_stairs": [
+      25,
+      25,
+      25
+    ],
     "minecraft:blackstone": [
       112,
       112,
@@ -3384,6 +3394,16 @@
       127,
       51
     ],
+    "minecraft:orange_wool_slab": [
+      216,
+      127,
+      51
+    ],
+    "minecraft:orange_wool_stairs": [
+      216,
+      127,
+      51
+    ],
     "minecraft:oxeye_daisy": [
       179,
       202,
@@ -4444,10 +4464,295 @@
       97,
       139
     ],
+    "minecraft:acacia_slab": [
+      216,
+      127,
+      51
+    ],
+    "minecraft:acacia_stairs": [
+      216,
+      127,
+      51
+    ],
+    "minecraft:birch_slab": [
+      255,
+      252,
+      245
+    ],
+    "minecraft:birch_stairs": [
+      255,
+      252,
+      245
+    ],
+    "minecraft:blackstone_slab": [
+      25,
+      25,
+      25
+    ],
+    "minecraft:blackstone_stairs": [
+      25,
+      25,
+      25
+    ],
+    "minecraft:brick_slab": [
+      151,
+      109,
+      77
+    ],
+    "minecraft:brick_stairs": [
+      151,
+      109,
+      77
+    ],
+    "minecraft:cherry_slab": [
+      242,
+      127,
+      165
+    ],
+    "minecraft:cherry_stairs": [
+      242,
+      127,
+      165
+    ],
+    "minecraft:cobblestone_slab": [
+      112,
+      112,
+      112
+    ],
+    "minecraft:cobblestone_stairs": [
+      112,
+      112,
+      112
+    ],
+    "minecraft:crimson_slab": [
+      148,
+      63,
+      97
+    ],
+    "minecraft:crimson_stairs": [
+      148,
+      63,
+      97
+    ],
+    "minecraft:cut_sandstone_slab": [
+      247,
+      233,
+      163
+    ],
+    "minecraft:cut_sandstone_stairs": [
+      247,
+      233,
+      163
+    ],
+    "minecraft:dark_oak_slab": [
+      102,
+      76,
+      51
+    ],
+    "minecraft:dark_oak_stairs": [
+      102,
+      76,
+      51
+    ],
+    "minecraft:deepslate_brick_slab": [
+      100,
+      100,
+      100
+    ],
+    "minecraft:deepslate_brick_stairs": [
+      100,
+      100,
+      100
+    ],
+    "minecraft:deepslate_slab": [
+      100,
+      100,
+      100
+    ],
+    "minecraft:deepslate_stairs": [
+      100,
+      100,
+      100
+    ],
+    "minecraft:deepslate_tile_slab": [
+      100,
+      100,
+      100
+    ],
+    "minecraft:deepslate_tile_stairs": [
+      100,
+      100,
+      100
+    ],
+    "minecraft:jungle_slab": [
+      154,
+      110,
+      77
+    ],
+    "minecraft:jungle_stairs": [
+      154,
+      110,
+      77
+    ],
+    "minecraft:mangrove_slab": [
+      153,
+      51,
+      51
+    ],
+    "minecraft:mangrove_stairs": [
+      153,
+      51,
+      51
+    ],
+    "minecraft:mossy_stone_brick_slab": [
+      112,
+      112,
+      112
+    ],
+    "minecraft:mossy_stone_brick_stairs": [
+      112,
+      112,
+      112
+    ],
+    "minecraft:nether_brick_slab": [
+      112,
+      2,
+      0
+    ],
+    "minecraft:nether_brick_stairs": [
+      112,
+      2,
+      0
+    ],
+    "minecraft:oak_slab": [
+      143,
+      119,
+      72
+    ],
+    "minecraft:oak_stairs": [
+      143,
+      119,
+      72
+    ],
+    "minecraft:pale_oak_slab": [
+      251,
+      239,
+      236
+    ],
+    "minecraft:pale_oak_stairs": [
+      251,
+      239,
+      236
+    ],
+    "minecraft:polished_blackstone_slab": [
+      25,
+      25,
+      25
+    ],
+    "minecraft:polished_blackstone_stairs": [
+      25,
+      25,
+      25
+    ],
+    "minecraft:quartz_slab": [
+      255,
+      252,
+      245
+    ],
+    "minecraft:quartz_stairs": [
+      255,
+      252,
+      245
+    ],
+    "minecraft:sandstone_slab": [
+      247,
+      233,
+      163
+    ],
+    "minecraft:sandstone_stairs": [
+      247,
+      233,
+      163
+    ],
     "minecraft:slab": [
       140,
       130,
       120
+    ],
+    "minecraft:smooth_sandstone_slab": [
+      247,
+      233,
+      163
+    ],
+    "minecraft:smooth_sandstone_stairs": [
+      247,
+      233,
+      163
+    ],
+    "minecraft:smooth_stone_slab": [
+      112,
+      112,
+      112
+    ],
+    "minecraft:smooth_stone_stairs": [
+      112,
+      112,
+      112
+    ],
+    "minecraft:smooth_quartz_slab": [
+      255,
+      252,
+      245
+    ],
+    "minecraft:smooth_quartz_stairs": [
+      255,
+      252,
+      245
+    ],
+    "minecraft:spruce_slab": [
+      129,
+      86,
+      49
+    ],
+    "minecraft:spruce_stairs": [
+      129,
+      86,
+      49
+    ],
+    "minecraft:stairs": [
+      0,
+      0,
+      0
+    ],
+    "minecraft:stone_brick_slab": [
+      112,
+      112,
+      112
+    ],
+    "minecraft:stone_brick_stairs": [
+      112,
+      112,
+      112
+    ],
+    "minecraft:stone_slab": [
+      112,
+      112,
+      112
+    ],
+    "minecraft:stone_stairs": [
+      112,
+      112,
+      112
+    ],
+    "minecraft:warped_slab": [
+      58,
+      142,
+      140
+    ],
+    "minecraft:warped_stairs": [
+      58,
+      142,
+      140
     ],
     "minecraft:slime_block": [
       127,
@@ -4743,11 +5048,6 @@
       129,
       86,
       49
-    ],
-    "minecraft:stairs": [
-      0,
-      0,
-      0
     ],
     "minecraft:stone": [
       112,
@@ -5614,6 +5914,16 @@
       255,
       255
     ],
+    "minecraft:white_wool_slab": [
+      255,
+      255,
+      255
+    ],
+    "minecraft:white_wool_stairs": [
+      255,
+      255,
+      255
+    ],
     "minecraft:wildflowers": [
       0,
       124,
@@ -5679,5 +5989,190 @@
       229,
       51
     ]
-  }
+  },
+  "minecraft:andesite_wall": [
+    112,
+    112,
+    112
+  ],
+  "minecraft:blackstone_wall": [
+    25,
+    25,
+    25
+  ],
+  "minecraft:brick_wall": [
+    153,
+    51,
+    51
+  ],
+  "minecraft:cinnabar_brick_wall": [
+    153,
+    51,
+    51
+  ],
+  "minecraft:cinnabar_wall": [
+    153,
+    51,
+    51
+  ],
+  "minecraft:cobbled_deepslate_wall": [
+    100,
+    100,
+    100
+  ],
+  "minecraft:cobblestone_wall": [
+    112,
+    112,
+    112
+  ],
+  "minecraft:deepslate_brick_wall": [
+    100,
+    100,
+    100
+  ],
+  "minecraft:deepslate_tile_wall": [
+    100,
+    100,
+    100
+  ],
+  "minecraft:diorite_wall": [
+    255,
+    252,
+    245
+  ],
+  "minecraft:end_stone_brick_wall": [
+    247,
+    233,
+    163
+  ],
+  "minecraft:granite_wall": [
+    151,
+    109,
+    77
+  ],
+  "minecraft:mossy_cobblestone_wall": [
+    112,
+    112,
+    112
+  ],
+  "minecraft:mossy_stone_brick_wall": [
+    112,
+    112,
+    112
+  ],
+  "minecraft:mud_brick_wall": [
+    151,
+    109,
+    77
+  ],
+  "minecraft:nether_brick_wall": [
+    112,
+    2,
+    0
+  ],
+  "minecraft:polished_blackstone_brick_wall": [
+    25,
+    25,
+    25
+  ],
+  "minecraft:polished_blackstone_wall": [
+    25,
+    25,
+    25
+  ],
+  "minecraft:polished_cinnabar_wall": [
+    153,
+    51,
+    51
+  ],
+  "minecraft:polished_deepslate_wall": [
+    100,
+    100,
+    100
+  ],
+  "minecraft:polished_sulfur_wall": [
+    229,
+    229,
+    51
+  ],
+  "minecraft:polished_tuff_wall": [
+    57,
+    41,
+    35
+  ],
+  "minecraft:prismarine_wall": [
+    76,
+    127,
+    153
+  ],
+  "minecraft:red_nether_brick_wall": [
+    112,
+    2,
+    0
+  ],
+  "minecraft:red_sandstone_wall": [
+    153,
+    51,
+    51
+  ],
+  "minecraft:resin_brick_wall": [
+    159,
+    82,
+    36
+  ],
+  "minecraft:sandstone_wall": [
+    247,
+    233,
+    163
+  ],
+  "minecraft:stone_brick_wall": [
+    112,
+    112,
+    112
+  ],
+  "minecraft:sulfur_brick_wall": [
+    229,
+    229,
+    51
+  ],
+  "minecraft:sulfur_wall": [
+    229,
+    229,
+    51
+  ],
+  "minecraft:tuff_brick_wall": [
+    57,
+    41,
+    35
+  ],
+  "minecraft:tuff_wall": [
+    57,
+    41,
+    35
+  ],
+  "minecraft:chiseled_nether_bricks": [
+    112,
+    2,
+    0
+  ],
+  "minecraft:cracked_nether_bricks": [
+    112,
+    2,
+    0
+  ],
+  "minecraft:nether_bricks": [
+    112,
+    2,
+    0
+  ],
+  "minecraft:netherrack": [
+    112,
+    2,
+    0
+  ],
+  "minecraft:red_nether_bricks": [
+    112,
+    2,
+    0
+  ]
 }

@@ -70,6 +70,81 @@ def test_banner_color_mapping():
         assert reason in ('palette', 'generic_palette_fallback')
 
 
+def test_material_specific_stairs_and_slabs_map_to_palette_variants():
+    cases = [
+        ("universal_minecraft:stairs[facing='north',half='bottom',material='oak',shape='straight']", (162, 130, 78)),
+        ("universal_minecraft:slab[material='spruce',type='bottom']", (129, 86, 49)),
+        ("universal_minecraft:stairs[facing='south',half='bottom',material='stone_brick',shape='straight']", (112, 112, 112)),
+    ]
+    for raw, expected in cases:
+        rgb, _, known, reason = wmtt4mc.classify_block(raw)
+        assert rgb == expected, f"{raw} should map to {expected}, got {rgb}"
+        assert known is True
+        assert reason in ('palette', 'generic_palette_fallback', 'variant')
+
+
+def test_pink_petals_direct_ids_use_known_palette_color():
+    rgb, _, known, reason = wmtt4mc.classify_block(_block("minecraft:pink_petals"))
+    assert rgb == (242, 127, 165)
+    assert known is True
+    assert reason in ('palette', 'variant', 'wiki_base_color', 'generic_palette_fallback')
+
+
+def test_stair_and_slab_ids_do_not_match_air_token():
+    cases = [
+        ("minecraft:oak_stairs", (143, 119, 72)),
+        ("minecraft:stone_brick_stairs", (112, 112, 112)),
+        ("minecraft:stairs", (140, 130, 120)),
+    ]
+    for block_id, expected in cases:
+        rgb, _, known, reason = wmtt4mc.classify_block(_block(block_id))
+        assert rgb == expected, f"{block_id} should map to {expected}, got {rgb}"
+        assert known is True
+        assert reason in ('palette', 'generic_palette_fallback', 'wiki_base_color')
+
+
+def test_quartz_and_wool_stairs_and_slabs_have_palette_entries():
+    cases = [
+        ("minecraft:quartz_stairs", (255, 252, 245)),
+        ("minecraft:quartz_slab", (255, 252, 245)),
+        ("minecraft:white_wool_stairs", (234, 236, 237)),
+        ("minecraft:orange_wool_slab", (241, 118, 20)),
+        ("minecraft:black_wool_stairs", (30, 30, 30)),
+    ]
+    for block_id, expected in cases:
+        rgb, _, known, reason = wmtt4mc.classify_block(_block(block_id))
+        assert rgb == expected, f"{block_id} should map to {expected}, got {rgb}"
+        assert known is True
+        assert reason in ('palette', 'generic_palette_fallback')
+
+
+def test_wall_variants_and_nether_blocks_have_expected_palette_colors():
+    wall_cases = [
+        ("minecraft:andesite_wall", (112, 112, 112)),
+        ("minecraft:blackstone_wall", (25, 25, 25)),
+        ("minecraft:brick_wall", (153, 51, 51)),
+        ("minecraft:polished_sulfur_wall", (229, 229, 51)),
+        ("minecraft:polished_cinnabar_wall", (153, 51, 51)),
+        ("minecraft:stone_brick_wall", (112, 112, 112)),
+    ]
+    for block_id, expected in wall_cases:
+        rgb, _, known, reason = wmtt4mc.classify_block(_block(block_id))
+        assert rgb == expected, f"{block_id} should map to {expected}, got {rgb}"
+        assert known is True
+        assert reason in ('palette', 'generic_palette_fallback')
+
+    nether_cases = [
+        ("minecraft:netherrack", (112, 2, 0)),
+        ("minecraft:nether_bricks", (112, 2, 0)),
+        ("minecraft:red_nether_bricks", (112, 2, 0)),
+    ]
+    for block_id, expected in nether_cases:
+        rgb, _, known, reason = wmtt4mc.classify_block(_block(block_id))
+        assert rgb == expected, f"{block_id} should map to {expected}, got {rgb}"
+        assert known is True
+        assert reason in ('palette', 'wiki_base_color', 'generic_palette_fallback')
+
+
 def test_sulfur_and_cinnabar_palette_entries():
     cases = [
         ("minecraft:polished_sulfur", (232, 196, 52)),

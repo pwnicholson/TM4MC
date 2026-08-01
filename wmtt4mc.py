@@ -1263,6 +1263,24 @@ WIKI_BASE_COLORS = {
 }
 
 
+def _token_in_block_id(block_id: str, token: str) -> bool:
+    """Match a token as a whole block-id component, not as an arbitrary substring."""
+    if not block_id or not token:
+        return False
+    bid = str(block_id).strip().lower()
+    if not bid.startswith("minecraft:"):
+        return False
+    base = bid.split(":", 1)[1] if ":" in bid else bid
+    if not base:
+        return False
+    return (
+        base == token
+        or base.startswith(token + "_")
+        or base.endswith("_" + token)
+        or f"_{token}_" in base
+    )
+
+
 def _wiki_base_color_for_block_id(block_id: str) -> Optional[Tuple[int, int, int]]:
     """Return the official base color for a block id using the Minecraft map base-color table."""
     if not block_id:
@@ -1273,86 +1291,86 @@ def _wiki_base_color_for_block_id(block_id: str) -> Optional[Tuple[int, int, int
     if not bid.startswith("minecraft:"):
         return None
 
-    if any(token in bid for token in ("air", "cave_air", "void_air", "barrier", "structure_void", "light_block", "pink_petals")):
+    if any(_token_in_block_id(bid, token) for token in ("air", "cave_air", "void_air", "barrier", "structure_void", "light_block")):
         return WIKI_BASE_COLORS["none"]
-    if any(token in bid for token in ("lava", "tnt", "fire", "redstone_block")):
+    if any(_token_in_block_id(bid, token) for token in ("lava", "tnt", "fire", "redstone_block")):
         return WIKI_BASE_COLORS["fire"]
-    if any(token in bid for token in ("ice", "packed_ice", "blue_ice", "frosted_ice")):
+    if any(_token_in_block_id(bid, token) for token in ("ice", "packed_ice", "blue_ice", "frosted_ice")):
         return WIKI_BASE_COLORS["ice"]
-    if any(token in bid for token in ("brewing_stand", "heavy_weighted_pressure_plate", "iron_trapdoor", "lantern", "anvil", "grindstone", "lodestone", "copper_trapdoor")):
+    if any(_token_in_block_id(bid, token) for token in ("brewing_stand", "heavy_weighted_pressure_plate", "iron_trapdoor", "lantern", "anvil", "grindstone", "lodestone", "copper_trapdoor")):
         return WIKI_BASE_COLORS["metal"]
-    if any(token in bid for token in ("grass_block", "short_grass", "tall_grass", "fern", "large_fern", "grass")):
+    if any(_token_in_block_id(bid, token) for token in ("grass_block", "short_grass", "tall_grass", "fern", "large_fern", "grass")):
         return WIKI_BASE_COLORS["grass"]
-    if "cherry_leaves" in bid or "cherry" in bid and "leaves" in bid:
+    if _token_in_block_id(bid, "cherry") and _token_in_block_id(bid, "leaves"):
         return WIKI_BASE_COLORS["pink"]
-    if any(token in bid for token in ("sapling", "flower", "wheat", "sugar_cane", "pumpkin_stem", "melon_stem", "lily_pad", "cocoa", "carrot", "potato", "beetroot", "sweet_berry_bush", "cactus", "bamboo", "cave_vines", "rose_bush", "sunflower", "leaves")):
+    if any(_token_in_block_id(bid, token) for token in ("sapling", "flower", "wheat", "sugar_cane", "pumpkin_stem", "melon_stem", "lily_pad", "cocoa", "carrot", "potato", "beetroot", "sweet_berry_bush", "cactus", "bamboo", "cave_vines", "rose_bush", "sunflower", "leaves")):
         return WIKI_BASE_COLORS["plant"]
-    if any(token in bid for token in ("snow", "powder_snow", "white_", "white", "_white")):
+    if any(_token_in_block_id(bid, token) for token in ("snow", "powder_snow", "white")):
         return WIKI_BASE_COLORS["snow"]
-    if any(token in bid for token in ("clay", "infested", "heavy_core")):
+    if any(_token_in_block_id(bid, token) for token in ("clay", "infested", "heavy_core")):
         return WIKI_BASE_COLORS["clay"]
-    if any(token in bid for token in ("sand", "suspicious_sand", "sandstone", "red_sand", "red_sandstone")):
+    if any(_token_in_block_id(bid, token) for token in ("sand", "suspicious_sand", "sandstone", "red_sand", "red_sandstone")):
         return WIKI_BASE_COLORS["sand"]
-    if any(token in bid for token in ("dirt", "farmland", "rooted_dirt", "hanging_roots", "packed_mud", "granite", "jukebox", "brown_mushroom_block")):
+    if any(_token_in_block_id(bid, token) for token in ("dirt", "farmland", "rooted_dirt", "hanging_roots", "packed_mud", "granite", "jukebox", "brown_mushroom_block")):
         return WIKI_BASE_COLORS["dirt"]
-    if any(token in bid for token in ("stone", "andesite", "cobblestone", "bedrock", "mossy_cobblestone", "monster_spawner", "redstone_ore", "stone_bricks", "ender_chest", "dropper", "observer", "smoker", "blast_furnace", "stonecutter", "piston", "gravel", "cauldron", "coal_ore", "iron_ore", "gold_ore", "lapis_ore", "diamond_ore", "emerald_ore", "copper_ore")):
-        if "deepslate" in bid:
+    if any(_token_in_block_id(bid, token) for token in ("stone", "andesite", "cobblestone", "bedrock", "mossy_cobblestone", "monster_spawner", "redstone_ore", "stone_bricks", "ender_chest", "dropper", "observer", "smoker", "blast_furnace", "stonecutter", "piston", "gravel", "cauldron", "coal_ore", "iron_ore", "gold_ore", "lapis_ore", "diamond_ore", "emerald_ore", "copper_ore")):
+        if _token_in_block_id(bid, "deepslate"):
             return WIKI_BASE_COLORS["deepslate"]
         return WIKI_BASE_COLORS["stone"]
-    if "deepslate" in bid:
+    if _token_in_block_id(bid, "deepslate"):
         return WIKI_BASE_COLORS["deepslate"]
-    if any(token in bid for token in ("water", "kelp", "seagrass", "bubble_column")):
+    if any(_token_in_block_id(bid, token) for token in ("water", "kelp", "seagrass", "bubble_column")):
         return WIKI_BASE_COLORS["water"]
-    if any(token in bid for token in ("acacia", "red_sand", "red_sandstone", "orange", "pumpkin", "terracotta", "honey", "copper")):
+    if any(_token_in_block_id(bid, token) for token in ("acacia", "red_sand", "red_sandstone", "orange", "pumpkin", "terracotta", "honey", "copper")):
         return WIKI_BASE_COLORS["orange"]
-    if any(token in bid for token in ("oak", "dark_oak", "spruce", "mangrove", "crimson", "warped", "birch", "pale_oak", "quartz", "diorite")):
-        if "spruce" in bid and any(token in bid for token in ("log", "planks", "door", "trapdoor", "slab", "stairs", "fence", "sign", "pressure_plate", "wood", "stripped_")):
+    if any(_token_in_block_id(bid, token) for token in ("oak", "dark_oak", "spruce", "mangrove", "crimson", "warped", "birch", "pale_oak", "quartz", "diorite")):
+        if _token_in_block_id(bid, "spruce") and any(_token_in_block_id(bid, token) for token in ("log", "planks", "door", "trapdoor", "slab", "stairs", "fence", "sign", "pressure_plate", "wood", "stripped_")):
             return WIKI_BASE_COLORS["podzol"]
-        if "birch" in bid and any(token in bid for token in ("log", "planks", "door", "trapdoor", "slab", "stairs", "fence", "sign", "pressure_plate", "wood", "stripped_")):
+        if _token_in_block_id(bid, "birch") and any(_token_in_block_id(bid, token) for token in ("log", "planks", "door", "trapdoor", "slab", "stairs", "fence", "sign", "pressure_plate", "wood", "stripped_")):
             return WIKI_BASE_COLORS["quartz"]
-        if "pale_oak" in bid and any(token in bid for token in ("log", "planks", "door", "trapdoor", "slab", "stairs", "fence", "sign", "pressure_plate", "wood", "stripped_")):
+        if _token_in_block_id(bid, "pale_oak") and any(_token_in_block_id(bid, token) for token in ("log", "planks", "door", "trapdoor", "slab", "stairs", "fence", "sign", "pressure_plate", "wood", "stripped_")):
             return WIKI_BASE_COLORS["quartz"]
-        if "dark_oak" in bid and any(token in bid for token in ("log", "planks", "door", "trapdoor", "slab", "stairs", "fence", "sign", "pressure_plate", "wood", "stripped_")):
+        if _token_in_block_id(bid, "dark_oak") and any(_token_in_block_id(bid, token) for token in ("log", "planks", "door", "trapdoor", "slab", "stairs", "fence", "sign", "pressure_plate", "wood", "stripped_")):
             return WIKI_BASE_COLORS["brown"]
-        if "mangrove" in bid and any(token in bid for token in ("log", "planks", "door", "trapdoor", "slab", "stairs", "fence", "sign", "pressure_plate", "wood", "stripped_")):
+        if _token_in_block_id(bid, "mangrove") and any(_token_in_block_id(bid, token) for token in ("log", "planks", "door", "trapdoor", "slab", "stairs", "fence", "sign", "pressure_plate", "wood", "stripped_")):
             return WIKI_BASE_COLORS["red"]
-        if "jungle" in bid and any(token in bid for token in ("log", "planks", "door", "trapdoor", "slab", "stairs", "fence", "sign", "pressure_plate", "wood", "stripped_")):
+        if _token_in_block_id(bid, "jungle") and any(_token_in_block_id(bid, token) for token in ("log", "planks", "door", "trapdoor", "slab", "stairs", "fence", "sign", "pressure_plate", "wood", "stripped_")):
             return WIKI_BASE_COLORS["dirt"]
-        if any(token in bid for token in ("log", "planks", "door", "trapdoor", "slab", "stairs", "fence", "sign", "pressure_plate", "wood", "stripped_")):
+        if any(_token_in_block_id(bid, token) for token in ("log", "planks", "door", "trapdoor", "slab", "stairs", "fence", "sign", "pressure_plate", "wood", "stripped_")):
             return WIKI_BASE_COLORS["wood"]
-    if any(token in bid for token in ("quartz", "diorite")):
+    if any(_token_in_block_id(bid, token) for token in ("quartz", "diorite")):
         return WIKI_BASE_COLORS["quartz"]
-    if any(token in bid for token in ("terracotta", "honey", "copper")):
+    if any(_token_in_block_id(bid, token) for token in ("terracotta", "honey", "copper")):
         return WIKI_BASE_COLORS["orange"]
-    if any(token in bid for token in ("magenta", "purpur")):
+    if any(_token_in_block_id(bid, token) for token in ("magenta", "purpur")):
         return WIKI_BASE_COLORS["magenta"]
-    if any(token in bid for token in ("light_blue", "soul_fire")):
+    if any(_token_in_block_id(bid, token) for token in ("light_blue", "soul_fire")):
         return WIKI_BASE_COLORS["light_blue"]
-    if any(token in bid for token in ("yellow", "sponge", "hay_block", "horn_coral")):
+    if any(_token_in_block_id(bid, token) for token in ("yellow", "sponge", "hay_block", "horn_coral")):
         return WIKI_BASE_COLORS["yellow"]
-    if any(token in bid for token in ("lime", "melon")):
+    if any(_token_in_block_id(bid, token) for token in ("lime", "melon")):
         return WIKI_BASE_COLORS["light_green"]
-    if any(token in bid for token in ("pink", "cherry", "brain_coral", "pearlescent_froglight", "cactus_flower")):
+    if any(_token_in_block_id(bid, token) for token in ("pink", "cherry", "brain_coral", "pearlescent_froglight", "cactus_flower")):
         return WIKI_BASE_COLORS["pink"]
-    if any(token in bid for token in ("gray", "dead_coral", "tinted_glass", "dried_ghast")):
+    if any(_token_in_block_id(bid, token) for token in ("gray", "dead_coral", "tinted_glass", "dried_ghast")):
         return WIKI_BASE_COLORS["gray"]
-    if any(token in bid for token in ("light_gray", "pale_moss", "structure_block", "jigsaw", "exposed_copper", "mud_bricks")):
+    if any(_token_in_block_id(bid, token) for token in ("light_gray", "pale_moss", "structure_block", "jigsaw", "exposed_copper", "mud_bricks")):
         return WIKI_BASE_COLORS["light_gray"]
-    if any(token in bid for token in ("cyan", "prismarine", "warped", "twisting_vines", "nether_sprouts", "sculk", "calibrated_sculk_sensor")):
+    if any(_token_in_block_id(bid, token) for token in ("cyan", "prismarine", "warped", "twisting_vines", "nether_sprouts", "sculk", "calibrated_sculk_sensor")):
         return WIKI_BASE_COLORS["cyan"]
-    if any(token in bid for token in ("purple", "mycelium", "chorus", "bubble_coral", "amethyst")):
+    if any(_token_in_block_id(bid, token) for token in ("purple", "mycelium", "chorus", "bubble_coral", "amethyst")):
         return WIKI_BASE_COLORS["purple"]
-    if any(token in bid for token in ("blue", "tube_coral")):
+    if any(_token_in_block_id(bid, token) for token in ("blue", "tube_coral")):
         return WIKI_BASE_COLORS["blue"]
-    if any(token in bid for token in ("green", "moss", "chain_command_block", "sea_pickle", "dried_kelp")):
+    if any(_token_in_block_id(bid, token) for token in ("green", "moss", "chain_command_block", "sea_pickle", "dried_kelp")):
         return WIKI_BASE_COLORS["green"]
-    if any(token in bid for token in ("brown", "soul_sand", "command_block", "brown_mushroom", "leaf_litter")):
+    if any(_token_in_block_id(bid, token) for token in ("brown", "soul_sand", "command_block", "brown_mushroom", "leaf_litter")):
         return WIKI_BASE_COLORS["brown"]
-    if any(token in bid for token in ("red", "nether_wart", "shroomlight", "mangrove")):
+    if any(_token_in_block_id(bid, token) for token in ("red", "nether_wart", "shroomlight", "mangrove")):
         return WIKI_BASE_COLORS["red"]
-    if any(token in bid for token in ("black", "obsidian", "coal", "basalt", "blackstone", "ancient_debris", "crying_obsidian", "sculk", "netherite", "dragon_egg")):
+    if any(_token_in_block_id(bid, token) for token in ("black", "obsidian", "coal", "basalt", "blackstone", "ancient_debris", "crying_obsidian", "sculk", "netherite", "dragon_egg")):
         return WIKI_BASE_COLORS["black"]
-    if any(token in bid for token in ("nether", "netherrack", "crimson", "warped", "magma")):
+    if any(_token_in_block_id(bid, token) for token in ("nether", "netherrack", "crimson", "warped", "magma")):
         return WIKI_BASE_COLORS["nether"]
     return None
 
@@ -2070,7 +2088,7 @@ PALETTE = {
     'minecraft:pink_concrete': (214, 101, 143),
     'minecraft:pink_concrete_powder': (229, 153, 181),
     'minecraft:pink_glazed_terracotta': (235, 155, 182),
-    'minecraft:pink_petals': (247, 181, 219),
+    'minecraft:pink_petals': (242, 127, 165),
     'minecraft:pink_petals_stem': (169, 169, 169),
     'minecraft:pink_shulker_box': (230, 122, 158),
     'minecraft:pink_stained_glass': (242, 127, 165),
@@ -2508,7 +2526,142 @@ PALETTE = {
     'minecraft:polished_sulfur_wall': (220, 180, 48),
     'minecraft:polished_cinnabar_wall': (190, 55, 55),
 }
+COMMON_STAIR_SLAB_VARIANT_COLORS = {
+    'minecraft:oak_stairs': (143, 119, 72),
+    'minecraft:oak_slab': (143, 119, 72),
+    'minecraft:spruce_stairs': (129, 86, 49),
+    'minecraft:spruce_slab': (129, 86, 49),
+    'minecraft:birch_stairs': (255, 252, 245),
+    'minecraft:birch_slab': (255, 252, 245),
+    'minecraft:jungle_stairs': (154, 110, 77),
+    'minecraft:jungle_slab': (154, 110, 77),
+    'minecraft:acacia_stairs': (216, 127, 51),
+    'minecraft:acacia_slab': (216, 127, 51),
+    'minecraft:dark_oak_stairs': (102, 76, 51),
+    'minecraft:dark_oak_slab': (102, 76, 51),
+    'minecraft:mangrove_stairs': (153, 51, 51),
+    'minecraft:mangrove_slab': (153, 51, 51),
+    'minecraft:cherry_stairs': (242, 127, 165),
+    'minecraft:cherry_slab': (242, 127, 165),
+    'minecraft:pale_oak_stairs': (251, 239, 236),
+    'minecraft:pale_oak_slab': (251, 239, 236),
+    'minecraft:crimson_stairs': (148, 63, 97),
+    'minecraft:crimson_slab': (148, 63, 97),
+    'minecraft:warped_stairs': (58, 142, 140),
+    'minecraft:warped_slab': (58, 142, 140),
+    'minecraft:stone_stairs': (112, 112, 112),
+    'minecraft:stone_slab': (112, 112, 112),
+    'minecraft:cobblestone_stairs': (112, 112, 112),
+    'minecraft:cobblestone_slab': (112, 112, 112),
+    'minecraft:stone_brick_stairs': (112, 112, 112),
+    'minecraft:stone_brick_slab': (112, 112, 112),
+    'minecraft:mossy_stone_brick_stairs': (112, 112, 112),
+    'minecraft:mossy_stone_brick_slab': (112, 112, 112),
+    'minecraft:smooth_stone_stairs': (112, 112, 112),
+    'minecraft:smooth_stone_slab': (112, 112, 112),
+    'minecraft:sandstone_stairs': (247, 233, 163),
+    'minecraft:sandstone_slab': (247, 233, 163),
+    'minecraft:smooth_sandstone_stairs': (247, 233, 163),
+    'minecraft:smooth_sandstone_slab': (247, 233, 163),
+    'minecraft:cut_sandstone_stairs': (247, 233, 163),
+    'minecraft:cut_sandstone_slab': (247, 233, 163),
+    'minecraft:brick_stairs': (151, 109, 77),
+    'minecraft:brick_slab': (151, 109, 77),
+    'minecraft:nether_brick_stairs': (112, 2, 0),
+    'minecraft:nether_brick_slab': (112, 2, 0),
+    'minecraft:deepslate_stairs': (100, 100, 100),
+    'minecraft:deepslate_slab': (100, 100, 100),
+    'minecraft:deepslate_brick_stairs': (100, 100, 100),
+    'minecraft:deepslate_brick_slab': (100, 100, 100),
+    'minecraft:deepslate_tile_stairs': (100, 100, 100),
+    'minecraft:deepslate_tile_slab': (100, 100, 100),
+    'minecraft:blackstone_stairs': (25, 25, 25),
+    'minecraft:blackstone_slab': (25, 25, 25),
+    'minecraft:polished_blackstone_stairs': (25, 25, 25),
+    'minecraft:polished_blackstone_slab': (25, 25, 25),
+    'minecraft:quartz_stairs': (255, 252, 245),
+    'minecraft:quartz_slab': (255, 252, 245),
+    'minecraft:smooth_quartz_stairs': (255, 252, 245),
+    'minecraft:smooth_quartz_slab': (255, 252, 245),
+}
+WOOL_STAIR_SLAB_VARIANT_COLORS = {
+    'white': (234, 236, 237),
+    'light_gray': (160, 160, 160),
+    'gray': (95, 95, 95),
+    'black': (30, 30, 30),
+    'brown': (120, 75, 45),
+    'red': (175, 45, 45),
+    'orange': (241, 118, 20),
+    'yellow': (225, 205, 60),
+    'lime': (120, 200, 60),
+    'green': (60, 140, 60),
+    'cyan': (60, 160, 160),
+    'light_blue': (100, 150, 215),
+    'blue': (60, 80, 175),
+    'purple': (120, 70, 160),
+    'magenta': (170, 70, 150),
+    'pink': (215, 130, 170),
+}
+
+WALL_VARIANT_COLORS = {
+    'minecraft:andesite_wall': (112, 112, 112),
+    'minecraft:blackstone_wall': (25, 25, 25),
+    'minecraft:brick_wall': (153, 51, 51),
+    'minecraft:cinnabar_brick_wall': (153, 51, 51),
+    'minecraft:cinnabar_wall': (153, 51, 51),
+    'minecraft:cobbled_deepslate_wall': (100, 100, 100),
+    'minecraft:cobblestone_wall': (112, 112, 112),
+    'minecraft:deepslate_brick_wall': (100, 100, 100),
+    'minecraft:deepslate_tile_wall': (100, 100, 100),
+    'minecraft:diorite_wall': (255, 252, 245),
+    'minecraft:end_stone_brick_wall': (247, 233, 163),
+    'minecraft:granite_wall': (151, 109, 77),
+    'minecraft:mossy_cobblestone_wall': (112, 112, 112),
+    'minecraft:mossy_stone_brick_wall': (112, 112, 112),
+    'minecraft:mud_brick_wall': (151, 109, 77),
+    'minecraft:nether_brick_wall': (112, 2, 0),
+    'minecraft:polished_blackstone_brick_wall': (25, 25, 25),
+    'minecraft:polished_blackstone_wall': (25, 25, 25),
+    'minecraft:polished_cinnabar_wall': (153, 51, 51),
+    'minecraft:polished_deepslate_wall': (100, 100, 100),
+    'minecraft:polished_sulfur_wall': (229, 229, 51),
+    'minecraft:polished_tuff_wall': (57, 41, 35),
+    'minecraft:prismarine_wall': (76, 127, 153),
+    'minecraft:red_nether_brick_wall': (112, 2, 0),
+    'minecraft:red_sandstone_wall': (153, 51, 51),
+    'minecraft:resin_brick_wall': (159, 82, 36),
+    'minecraft:sandstone_wall': (247, 233, 163),
+    'minecraft:stone_brick_wall': (112, 112, 112),
+    'minecraft:sulfur_brick_wall': (229, 229, 51),
+    'minecraft:sulfur_wall': (229, 229, 51),
+    'minecraft:tuff_brick_wall': (57, 41, 35),
+    'minecraft:tuff_wall': (57, 41, 35),
+}
+
+NETHER_VARIANT_COLORS = {
+    'minecraft:chiseled_nether_bricks': (112, 2, 0),
+    'minecraft:cracked_nether_bricks': (112, 2, 0),
+    'minecraft:nether_bricks': (112, 2, 0),
+    'minecraft:netherrack': (112, 2, 0),
+    'minecraft:red_nether_bricks': (112, 2, 0),
+}
+
+
+def _apply_explicit_palette_colors(palette: Dict[str, Tuple[int, int, int]]) -> None:
+    for _key, _rgb in COMMON_STAIR_SLAB_VARIANT_COLORS.items():
+        palette[_key] = _rgb
+    for _color_name, _rgb in WOOL_STAIR_SLAB_VARIANT_COLORS.items():
+        palette[f"minecraft:{_color_name}_wool_stairs"] = _rgb
+        palette[f"minecraft:{_color_name}_wool_slab"] = _rgb
+    for _key, _rgb in WALL_VARIANT_COLORS.items():
+        palette[_key] = _rgb
+    for _key, _rgb in NETHER_VARIANT_COLORS.items():
+        palette[_key] = _rgb
+
+
+_apply_explicit_palette_colors(PALETTE)
 _apply_wiki_base_colors_to_palette(PALETTE)
+_apply_explicit_palette_colors(PALETTE)
 # Always build palette lookup tables at module load to avoid NameError in subprocesses
 PALETTE_KEY_TO_IDX, PALETTE_COLOR_TABLE = build_palette_lookup(PALETTE)
 
@@ -2683,7 +2836,7 @@ PLANT_TYPE_PALETTE = {
     "tulip_pink": (230, 140, 170),
     "sunflower": (235, 205, 70),
     "lily_of_the_valley": (235, 235, 235),
-    "pink_petals": (230, 150, 175),
+    "pink_petals": (242, 127, 165),
     "wildflowers": (210, 200, 120),
 }
 
@@ -3261,13 +3414,13 @@ def classify_block(block, extra_palette: Optional[Dict[str, Tuple[int, int, int]
         if palette_key in extra_palette:
             reason = "generic_palette_fallback" if _is_type_level_generic_id(palette_key) else "editor_palette"
             return extra_palette[palette_key], report_key, True, reason
-        if bid in extra_palette:
+        if bid in extra_palette and (palette_key == bid or not _is_type_level_generic_id(bid)):
             reason = "generic_palette_fallback" if _is_type_level_generic_id(bid) else "editor_palette"
             return extra_palette[bid], report_key, True, reason
     if palette_key in PALETTE:
         reason = "generic_palette_fallback" if _is_type_level_generic_id(palette_key) else "palette"
         return PALETTE[palette_key], report_key, True, reason
-    if bid in PALETTE:
+    if bid in PALETTE and (palette_key == bid or not _is_type_level_generic_id(bid)):
         reason = "generic_palette_fallback" if _is_type_level_generic_id(bid) else "palette"
         return PALETTE[bid], report_key, True, reason
 
