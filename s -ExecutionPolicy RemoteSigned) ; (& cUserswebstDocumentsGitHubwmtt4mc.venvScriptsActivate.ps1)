@@ -1,0 +1,365 @@
+[33mcommit b3ed83d3727d28196081814b2697e6bb6cbcda4c[m
+Author: Paul Nicholson <271459+pwnicholson@users.noreply.github.com>
+Date:   Tue May 5 09:40:24 2026 -0500
+
+    v1.7.0: Cache build progress/ETA, fix stop/close deadlock, UI polish
+    
+    - Add real-time cache build progress and ETA display during pre-build phase
+    - Fix critical deadlock preventing stop/close during cache building (resume workers before signaling cancellation)
+    - Fix worker thread hang on cache build failure (timeout pool.join)
+    - Move cache help text to clickable ? button with bulleted list format
+    - Make timelapse dropdowns white when active; cache mode dropdown white/grey by state
+    - Auto-disable cache mode for non-Original video resolutions
+    - Separate 'Cache Creation Progress' from 'Rendering Progress' with own ETA counters
+    - Add CHANGELOG documenting recent fixes and improvements
+
+[1mdiff --git a/wmtt4mc.py b/wmtt4mc.py[m
+[1m--- a/wmtt4mc.py[m
+[1m+++ b/wmtt4mc.py[m
+[36m@@ -5024,5 +6029,58 @@[m
+[32m+                    else:[m
+[32m+                        retry_opt.workers = max(1, int(opt.workers))[m
+[32m+                    retry_fut = retry_executor.submit([m
+[32m+                        _render_frame_task,[m
+[32m+                        snapshot,[m
+[32m+                        zip_i,[m
+[32m+                        total_zips,[m
+[32m+                        frame_no,[m
+[32m+                        frame_png,[m
+[32m+                        debug_snapshot_path,[m
+[32m+                        run_dir,[m
+[32m+                        frames_dir,[m
+[32m+                        retry_opt,[m
+[32m+                        None,[m
+[32m+                        stage_path,[m
+[32m+                    )[m
+[32m+                    success, bounds, _nm, error_reason, error_log_path = retry_fut.result(timeout=retry_timeout_s)[m
+[32m+                except TimeoutError:[m
+[32m+                    # If the frame PNG exists, treat as success with unknown bounds.[m
+[32m+                    # This covers cases where rendering finished but worker cleanup hung.[m
+[32m+                    if os.path.isfile(frame_png) and os.path.getsize(frame_png) > 0:[m
+[32m+                        success, bounds = True, None[m
+[32m+                        error_reason = ""[m
+[32m+                        error_log_path = ""[m
+[32m+                        log(f"[FRAME RETRY SALVAGE] Timeout but frame file exists, accepting output: {os.path.basename(frame_png)}")[m
+[32m+                    else:[m
+[32m+                        success, bounds = False, None[m
+[32m+                        stage_name = _read_last_stage(stage_path)[m
+[32m+                        error_reason = f"Retry timed out after {retry_timeout_s}s (last stage: {stage_name})"[m
+[32m+                        error_log_path = ""[m
+[32m+                except Exception as _retry_exc:[m
+[32m+                    success, bounds = False, None[m
+[32m+                    error_reason = f"Retry worker error: {type(_retry_exc).__name__}: {_retry_exc}"[m
+[32m+                    error_log_path = ""[m
+[32m+                finally:[m
+[32m+                    _unregister_process_pool(retry_executor)[m
+[32m+                    try:[m
+[32m+                        retry_executor.shutdown(wait=False, cancel_futures=True)[m
+[32m+                    except Exception:[m
+[32m+                        pass[m
+[32m+                    _force_terminate_pool(retry_executor, f"retry #{zip_i}")[m
+[32m+[m
+[32m+                if success:[m
+[32m+                    rendered_frames.append((frame_no, frame_png, bounds))[m
+[32m+                    blocks_rendered += frame_block_counts.get(snapshot.path, 1)[m
+[32m+                    log(f"[FRAME RETRY DONE] #{zip_i:03d}/{total_zips:03d} {name}")[m
+[32m+                else:[m
+[32m+                    reason = error_reason or "Retry failed"[m
+[32m+                    skipped.append((name, reason, error_log_path or ""))[m
+[32m+                    log(f"[FRAME RETRY FAILED] {name}: {reason}")[m
+[32m+                    if error_log_path:[m
+[32m+                        log(f"  error log: {error_log_path}")[m
+[32m+[m
+         run_elapsed = max(0.0, time.time() - job_start)[m
+         _record_auto_tuner_result([m
+             str(strategy.get("machine_key", "unknown")),[m
+             {[m
+                 "frame_workers": int(opt.workers),[m
+
+[33mcommit 4c5d968fdfa6df5aafdf6d1d983bd16573b508c9[m
+Author: Paul Nicholson <271459+pwnicholson@users.noreply.github.com>
+Date:   Sat Apr 11 14:52:28 2026 -0500
+
+    v1.6.0 - Palette editor overhaul, texture pack import, editor palette render option
+    
+    - New PALETTE: 1111 entries from Java texture averages (palette.json)
+    - Palette Editor: texture pack import (zip/mcpack/folder) with threaded
+      extraction, indeterminate progress dialog, and cancel support
+    - Palette Editor: conflict resolution dialog for same-block different-color merges
+    - Palette Editor: texture pack preview dialog with filter + select/deselect all
+    - Palette Editor: open palette prompts Add/Replace when palette already loaded
+    - Palette Editor: _pal_merge_dict / _pal_load_merge / _pal_from_texture_pack
+    - Palette Editor: transparent checkbox now preserves list scroll position
+    - Render options: 'Use palette loaded in palette editor' checkbox (timelapse
+      and single-map tabs) - editor palette checked first, falls back to default
+      palette, unknown blocks still logged to unknown_blocks.json
+    - RenderOptions: use_editor_palette + editor_palette fields; palette snapshotted
+      at render start so mid-render editor changes don't affect the running job
+    - classify_block: accepts optional extra_palette kwarg
+    - Help tab: full Palette Editor section covering lookup priority, workflow,
+      texture pack import, merge/conflict, transparent blocks, and save procedure
+
+[1mdiff --git a/wmtt4mc.py b/wmtt4mc.py[m
+[1m--- a/wmtt4mc.py[m
+[1m+++ b/wmtt4mc.py[m
+[36m@@ -1947,9 +5024,5 @@[m
+[31m-        skipped_report = None[m
+[31m-        if skipped:[m
+[31m-            skipped_report = os.path.join(run_dir, "skipped_backups.txt")[m
+[31m-            with open(skipped_report, "w", encoding="utf-8") as f:[m
+[31m-                f.write("Skipped backups:\\n\\n")[m
+[31m-                for nm, reason in skipped:[m
+[31m-                    f.write(f"- {nm}\\n  {reason}\\n\\n")[m
+[31m-            log("-" * 60)[m
+[31m-            log(f"Wrote skip report: {skipped_report}")[m
+[32m+        run_elapsed = max(0.0, time.time() - job_start)[m
+[32m+        _record_auto_tuner_result([m
+[32m+            str(strategy.get("machine_key", "unknown")),[m
+[32m+            {[m
+[32m+                "frame_workers": int(opt.workers),[m
+ fn.lower().endswith(".mca"):[m
+[31m-                        rel = os.path.relpath(full_path, src)[m
+[31m-                        region_candidates.append(rel)[m
+[31m-                    rel_any = os.path.relpath(full_path, src)[m
+[31m-                    bedrock_candidates.append(rel_any)[m
+[31m-                    try:[m
+[31m-                        bedrock_sizes[rel_any] = int(os.path.getsize(full_path))[m
+[31m-                    except Exception:[m
+[31m-                        pass[m
+[31m-            area = _estimate_block_area_from_region_paths(region_candidates, dimension)[m
+[31m-            if area is not None:[m
+[31m-                return area, "java-region"[m
+[31m-            area = _estimate_bedrock_block_area_from_entries(bedrock_candidates, size_lookup=bedrock_sizes)[m
+[31m-            if area is not None:[m
+[31m-                return area, "bedrock-db-size"[m
+[31m-    except Exception:[m
+[31m-        pass[m
+[31m-[m
+[31m-    return None, "fallback"[m
+[31m-[m
+ [m
+[31m-def estimate_snapshot_block_area(snapshot: SnapshotInput, dimension: str) -> Optional[int]:[m
+[31m-    area, _source = estimate_snapshot_block_area_with_source(snapshot, dimension)[m
+[31m-    return area[m
+ [m
+ [m
+ def _resolve_snapshot_world_roots(source_path: str, out_dir: str) -> Tuple[Optional[str], List[str]]:[m
+[36m@@ -6333,28 +6176,7 @@[m [mdef build_gif(frame_paths: List[str], out_gif: str, seconds_per_frame: float, lo[m
+             pass[m
+ [m
+ [m
+[31m-class EtaSmoother:[m
+[31m-    def __init__(self, window: int = 5):[m
+[31m-        self.values = deque(maxlen=max(1, window))[m
+[31m-[m
+[31m-    def add(self, v: float) -> Optional[float]:[m
+[31m-        if v is None or v != v or v < 0:[m
+[31m-            return self.value()[m
+[31m-        self.values.append(float(v))[m
+[31m-        return self.value()[m
+ [m
+[31m-    def value(self) -> Optional[float]:[m
+[31m-        if not self.values:[m
+[31m-            return None[m
+[31m-        return sum(self.values) / len(self.values)[m
+[31m-[m
+[31m-[m
+[31m-def estimate_remaining_seconds(elapsed: float, frac_done: float) -> Optional[float]:[m
+[31m-    if frac_done <= 0.005:[m
+[31m-        return None[m
+[31m-    total_est = elapsed / max(1e-6, frac_done)[m
+[31m-    rem = max(0.0, total_est - elapsed)[m
+[31m-    return rem[m
+ [m
+ [m
+ def _machine_profile_key(has_psutil: bool) -> str:[m
+[36m@@ -6720,12 +6542,6 @@[m [mdef worker_run(snapshots: List[SnapshotInput],[m
+                     _needs_build_count += 1[m
+             total_needs_build = max(1, _needs_build_count)[m
+             completed_builds = [0][m
+[31m-            cache_phase_t0 = [time.time()][m
+[31m-[m
+[31m-            def _fmt_cache_eta(secs: float) -> str:[m
+[31m-                s = max(0, int(secs))[m
+[31m-                return f"{s // 3600:02d}:{(s % 3600) // 60:02d}:{s % 60:02d}"[m
+[31m-[m
+             for prep_i, snap in enumerate(snapshots, start=1):[m
+                 if cancel_event.is_set():[m
+                     log("[CACHE OUTPUT] Stop requested during cache preparation.")[m
+[36m@@ -6773,35 +6589,10 @@[m [mdef worker_run(snapshots: List[SnapshotInput],[m
+                     continue[m
+ [m
+                 try:[m
+[31m-                    _build_seq = completed_builds[0] + 1[m
+[31m-                    _build_label = snap.display_name[m
+[31m-[m
+[31m-                    def _cache_progress_cb([m
+[31m-                        done: int,[m
+[31m-                        total_chunks: int,[m
+[31m-                        frac: float,[m
+[31m-                        _bname: str = _build_label,[m
+[31m-                        _bseq: int = _build_seq,[m
+[31m-                        _btotal: int = total_needs_build,[m
+[31m-                    ) -> None:[m
+[31m-                        _overall = (completed_builds[0] + frac) / _btotal[m
+[31m-                        progress(_overall * 100.0)[m
+[31m-                        _elapsed = time.time() - cache_phase_t0[0][m
+[31m-                        if _overall > 0.02 and _elapsed > 2.0:[m
+[31m-                            _rem = _elapsed / _overall - _elapsed[m
+[31m-                            _eta = _fmt_cache_eta(_rem)[m
+[31m-                        else:[m
+[31m-                            _eta = "--"[m
+[31m-                        status([m
+[31m-                            f"Building caches ({_bseq}/{_btotal}): {_bname}",[m
+[31m-                            f"Chunk {done}/{total_chunks} — Cache build ETA {_eta}",[m
+[31m-                        )[m
+[31m-[m
+                     status([m
+[31m-                        f"Building caches ({_build_seq}/{total_needs_build}): {snap.display_name}",[m
+[31m-                        "Starting… (loading world)",[m
+[32m+[m[32m                        f"Building caches: {snap.display_name}",[m
+[32m+[m[32m                        "Loading world...",[m
+                     )[m
+[31m-                    progress((completed_builds[0] / total_needs_build) * 100.0)[m
+                     log([m
+                         f"[CACHE OUTPUT] {prep_i:02d}/{total_prep:02d} building cache for {snap.display_name} "[m
+                         f"({reason})"[m
+[36m@@ -6821,7 +6612,7 @@[m [mdef worker_run(snapshots: List[SnapshotInput],[m
+                         y_max=opt.y_max,[m
+                         stop_on_bad_chunk_data=bool(getattr(opt, "stop_on_bad_chunk_data", False)),[m
+                         log_cb=lambda m: log(f"[CACHE OUTPUT] {m}"),[m
+[31m-                        progress_cb=_cache_progress_cb,[m
+[32m+[m[32m                        progress_cb=None,[m
+                         cancel_event=cancel_event,[m
+                     )[m
+                     completed_builds[0] += 1[m
+[36m@@ -6990,64 +6781,133 @@[m [mdef worker_run(snapshots: List[SnapshotInput],[m
+             else:[m
+                 png_name = f"{key}.png"[m
+             frame_png_by_path[snap.path] = os.path.join(frames_dir, png_name)[m
+[31m-        RENDER_WEIGHT = 92.0[m
+[31m-[m
+[31m-        # --- Block-based progress setup ---[m
+[31m-        # Estimate total blocks to render across all frames using cheap metadata scans.[m
+[31m-        total_blocks = 0[m
+[31m-        frame_block_counts = {}[m
+[31m-        known_areas: List[int] = [][m
+[31m-        # Use crop area as an upper bound when crop is enabled.[m
+[31m-        if opt.limit_enabled:[m
+[31m-            x1 = int(min(opt.x_min, opt.x_max))[m
+[31m-            x2 = int(max(opt.x_min, opt.x_max))[m
+[31m-            z1 = int(min(opt.z_min, opt.z_max))[m
+[31m-            z2 = int(max(opt.z_min, opt.z_max))[m
+[31m-        else:[m
+[31m-            # If not limited, use a large default (e.g., 5120x5120)[m
+[31m-            x1, x2, z1, z2 = 0, 5119, 0, 5119[m
+[31m-        width = abs(x2 - x1) + 1[m
+[31m-        height = abs(z2 - z1) + 1[m
+[31m-        crop_area = width * height[m
+[31m-[m
+[31m-        for snapshot in chronological:[m
+[31m-            est, est_source = estimate_snapshot_block_area_with_source(snapshot, opt.dimension)[m
+[31m-            if est is not None and est > 0:[m
+[31m-                if opt.limit_enabled:[m
+[31m-                    est = min(int(est), int(crop_area))[m
+[31m-                frame_block_counts[snapshot.path] = int(est)[m
+[31m-                known_areas.append(int(est))[m
+[32m+[m[32m        job_start = time.time()[m
+[32m+[m[41m        [m
+[32m+[m[32m        # --- Chunk-based Progress & ETA Tracking Setup ---[m
+[32m+[m[32m        def _estimate_raw_chunks_fallback(s) -> int:[m
+             try:[m
+[31m-                if est is not None and est > 0:[m
+[31m-                    log(f"[ESTIMATE] {snapshot.display_name}: source={est_source}, area≈{int(est):,} blocks")[m
+[31m-                else:[m
+[31m-                    log(f"[ESTIMATE] {snapshot.display_name}: source={est_source}, area=unknown (using default)")[m
+[32m+[m[32m                raw_src = s.raw_path or s.path[m
+[32m+[m[32m                if os.path.isfile(raw_src):[m
+[32m+[m[32m                    size = os.path.getsize(raw_src)[m
+[32m+[m[32m                    return max(2000, min(12000, int(size / 20000)))[m
+[32m+[m[32m                elif os.path.isdir(raw_src):[m
+[32m+[m[32m                    total_size = 0[m
+[32m+[m[32m                    for root, dirs, files in os.walk(raw_src):[m
+[32m+[m[32m                        for f in files:[m
+[32m+[m[32m                            total_size += os.path.getsize(os.path.join(root, f))[m
+[32m+[m[32m                    return max(2000, min(12000, int(total_size / 80000)))[m
+             except Exception:[m
+                 pass[m
+[32m+[m[32m            return 5000[m
+[32m+[m
+[32m+[m[32m        snapshot_chunk_estimates = {}[m
+[32m+[m[32m        max_cached_chunks = 0[m
+[32m+[m[32m        requested_cache_mode = str(output_cache_mode or "").strip().lower()[m
+ [m
+[31m-        default_area = int(crop_area)[m
+[31m-        if (not opt.limit_enabled) and known_areas:[m
+[31m-            # Median known area is more stable than a hard-coded giant default.[m
+[31m-            s = sorted(known_areas)[m
+[31m-            default_area = int(s[len(s) // 2])[m
+[31m-        elif (not opt.limit_enabled) and (not known_areas):[m
+[31m-            default_area = 5120 * 5120[m
+[32m+[m[32m        # Try to find known chunk counts from existing caches[m
+[32m+[m[32m        for snap in chronological:[m
+[32m+[m[32m            val = None[m
+[32m+[m[32m            if is_cache_file(snap.path):[m
+[32m+[m[32m                try:[m
+[32m+[m[32m                    h = read_cache_header(snap.path)[m
+[32m+[m[32m                    val = int(h.get("chunks_total", 0))[m
+[32m+[m[32m                except Exception:[m
+[32m+[m[32m                    pass[m
+[32m+[m[32m            else:[m
+[32m+[m[32m                raw_src = snap.raw_path or snap.path[m
+[32m+[m[32m                if raw_src:[m
+[32m+[m[32m                    for mode in (requested_cache_mode, CACHE_MODE_SURFACE, CACHE_MODE_ALL_BLOCKS):[m
+[32m+[m[32m                        if not mode or mode == CACHE_MODE_NONE:[m
+[32m+[m[32m                            continue[m
+[32m+[m[32m                        cp = sidecar_cache_path(raw_src, opt.dimension, mode)[m
+[32m+[m[32m                        if os.path.isfile(cp):[m
+[32m+[m[32m                            try:[m
+[32m+[m[32m                                h = read_cache_header(cp)[m
+[32m+[m[32m                                val = int(h.get("chunks_total", 0))[m
+[32m+[m[32m                                break[m
+[32m+[m[32m                            except Exception:[m
+[32m+[m[32m                                pass[m
+[32m+[m[32m            if val is not None and val > 0:[m
+[32m+[m[32m                snapshot_chunk_estimates[snap.path] = val[m
+[32m+[m[32m                if val > max_cached_chunks:[m
+[32m+[m[32m                    max_cached_chunks = val[m
+ [m
+[31m-        for snapshot in chronological:[m
+[31m-            if snapshot.path not in frame_block_counts:[m
+[31m-                frame_block_counts[snapshot.path] = int(default_area)[m
+[31m-            total_blocks += int(frame_block_counts[snapshot.path])[m
+[32m+[m[32m        # Assign estimates to snapshots without existing caches[m
+[32m+[m[32m        for snap in chronological:[m
+[32m+[m[32m            if snap.path not in snapshot_chunk_estimates:[m
+[32m+[m[32m                if max_cached_chunks > 0:[m
+[32m+[m[32m                    snapshot_chunk_estimates[snap.path] = max_cached_chunks[m
+[32m+[m[32m                else:[m
+[32m+[m[32m                    snapshot_chunk_estimates[snap.path] = _estimate_raw_chunks_fallback(snap)[m
+[32m+[m
+[32m+[m[32m        frame_completion_history = deque(maxlen=10)[m
+[32m+[m[32m        completed_chunks_rendered_only = 0.0[m
+[32m+[m[32m        last_eta_calc_time = 0.0[m
+[32m+[m[32m        last_eta_val = None[m
+[32m+[m
+[32m+[m[32m        def _send_progress_eta_update(active, queued, completed_frames):[m
+[32m+[m[32m            nonlocal last_eta_calc_time, last_eta_val, completed_chunks_rendered_only[m
+[32m+[m[32m            now = time.time()[m
+[32m+[m[32m            total_chunks_project = sum(snapshot_chunk_estimates.values())[m
+[32m+[m[41m            [m
+[32m+[m[32m            completed_chunks = completed_chunks_rendered_only[m
+[32m+[m[32m            for snap in snapshots:[m
+[32m+[m[32m                if any(x[0] == snap.display_name for x in skipped):[m
+[32m+[m[32m                    completed_chunks += snapshot_chunk_estimates.get(snap.path, 5000)[m
+[32m+[m[41m            [m
+[32m+[m[32m            remaining_chunks = max(0, total_chunks_project - completed_chunks)[m
+[32m+[m[41m            [m
+[32m+[m[32m            if last_eta_val is None or (now - last_eta_calc_time) >= 10.0:[m
+[32m+[m[32m                last_eta_calc_time = now[m
+[32m+[m[32m                overall_elapsed = now - job_start[m
+[32m+[m[32m                overall_speed = completed_chunks_rendered_only / max(1.0, overall_elapsed)[m
+[32m+[m[41m                [m
+[32m+[m[32m                moving_speed = None[m
+[32m+[m[32m                if len(frame_completion_history) >= 2:[m
+[32m+[m[32m                    t_old, _ = frame_complet

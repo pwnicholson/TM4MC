@@ -29,6 +29,26 @@ class TestProgressBarETA(unittest.TestCase):
         self.assertEqual(bar._active_chunk_progress, 0.5)
         root.destroy()
 
+    def test_canvas_progress_bar_large_frame_count(self):
+        """Test CanvasProgressBar with large frame counts (e.g., 268 and 1000)."""
+        import tkinter as tk
+        try:
+            root = tk.Tk()
+            root.withdraw()
+        except tk.TclError:
+            self.skipTest("Tkinter GUI display not available")
+
+        bar = wmtt4mc.CanvasProgressBar(root)
+        bar.set_progress(completed=150, in_progress=4, total=268, active_chunk_progress=0.3)
+        self.assertEqual(bar._completed, 150)
+        self.assertEqual(bar._in_progress, 4)
+        self.assertEqual(bar._total, 268)
+
+        # Test larger total
+        bar.set_progress(completed=990, in_progress=10, total=1000, active_chunk_progress=0.8)
+        self.assertEqual(bar._total, 1000)
+        root.destroy()
+
     def test_trend_decay_calculation(self):
         """Test snapshot chunk decay trend estimation."""
         @dataclass

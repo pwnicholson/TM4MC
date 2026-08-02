@@ -267,6 +267,33 @@ class CanvasProgressBar(tk.Canvas):
 
         slot_w = w / float(total)
 
+        if total > 100 or slot_w < 6.0:
+            # Aggregated drawing for performance with large frame counts
+            comp_x = int(round(self._completed * slot_w))
+            comp_x = min(w, comp_x)
+            if comp_x > 0:
+                self.create_rectangle(0, 0, comp_x, h, fill=self._solid_color, outline="")
+
+            act_x = int(round((self._completed + self._in_progress) * slot_w))
+            act_x = min(w, max(comp_x, act_x))
+
+            if act_x > comp_x:
+                act_w = act_x - comp_x
+                solid_px = int(round(act_w * self._active_chunk_progress)) if self._active_chunk_progress > 0 else 0
+                if solid_px > 0:
+                    self.create_rectangle(comp_x, 0, comp_x + solid_px, h, fill=self._solid_color, outline="")
+                
+                hash_x1 = comp_x + solid_px
+                if act_x > hash_x1:
+                    self.create_rectangle(hash_x1, 0, act_x, h, fill=self._hash_bg_color, outline="")
+                    for lx in range(hash_x1 - h, act_x + h, 6):
+                        self.create_line(lx, h, lx + h, 0, fill=self._hash_line_color, width=2)
+
+            if w > act_x:
+                self.create_rectangle(act_x, 0, w, h, fill=self._open_bg_color, outline="")
+            return
+
+        # Individual slice drawing for small frame counts
         for i in range(total):
             x1 = int(round(i * slot_w))
             x2 = int(round((i + 1) * slot_w))
@@ -274,10 +301,8 @@ class CanvasProgressBar(tk.Canvas):
                 x2 = x1 + 1
 
             if i < self._completed:
-                # Solid completed frame
                 self.create_rectangle(x1, 0, x2, h, fill=self._solid_color, outline="")
             elif i < self._completed + self._in_progress:
-                # Active / in-progress frame
                 fill_w = x2 - x1
                 solid_px = int(round(fill_w * self._active_chunk_progress)) if self._active_chunk_progress > 0 else 0
                 if solid_px > 0:
@@ -286,15 +311,12 @@ class CanvasProgressBar(tk.Canvas):
                 hash_x1 = x1 + solid_px
                 if x2 > hash_x1:
                     self.create_rectangle(hash_x1, 0, x2, h, fill=self._hash_bg_color, outline="")
-                    # Draw diagonal hash lines
                     for lx in range(hash_x1 - h, x2 + h, 6):
                         self.create_line(lx, h, lx + h, 0, fill=self._hash_line_color, width=2)
             else:
-                # Open / unprocessed frame
                 self.create_rectangle(x1, 0, x2, h, fill=self._open_bg_color, outline="")
 
-            # Subtle vertical slot divider
-            if i > 0 and total <= 150:
+            if i > 0:
                 self.create_line(x1, 0, x1, h, fill="#c0c0c0", width=1)
 
 
@@ -6459,7 +6481,10 @@ def worker_run(snapshots: List[SnapshotInput],
         log("Processing order: newest snapshots first (reverse filename index).")
         log("GIF order: oldest → newest (chronological).")
         try:
-            queue_preview = " -> ".join([s.display_name for s in snapshots])
+            if len(snapshots) <= 20:
+                queue_preview = " -> ".join([s.display_name for s in snapshots])
+            else:
+                queue_preview = " -> ".join([s.display_name for s in snapshots[:3]]) + f" -> ... ({len(snapshots) - 6} more) -> " + " -> ".join([s.display_name for s in snapshots[-3:]])
             log(f"Queue (newest→oldest): {queue_preview}")
         except Exception:
             pass
@@ -6962,8 +6987,8 @@ def worker_run(snapshots: List[SnapshotInput],
             
             remaining_chunks = max(0.0, total_chunks_project - completed_chunks)
             
-            # Smooth ETA calculation, updating every 15 seconds (10-20s requirement)
-            if last_eta_val is None or (now - last_eta_calc_time) >= 15.0:
+            # Smooth ETA calculation, updating every 5 seconds
+            if last_eta_val is None or (now - last_eta_calc_time) >= 5.0:
                 last_eta_calc_time = now
                 overall_elapsed = max(1.0, now - job_start)
                 overall_speed = completed_chunks_rendered_only / overall_elapsed
@@ -7004,7 +7029,7 @@ def worker_run(snapshots: List[SnapshotInput],
                 else:
                     eta_str = f"Estimated time remaining: {seconds}s"
             elif completed_frames >= total_zips:
-                eta_str = "ETA: Complete"
+                eta_str = "Building animation from frames..."
             else:
                 eta_str = "ETA: Estimating..."
 
@@ -7699,6 +7724,16 @@ def worker_run(snapshots: List[SnapshotInput],
         if cancel_event.is_set():
             log("Stop requested: building GIF from completed frames.")
         status("Building animated GIF…", "")
+        msgq.put((
+            "progress_update",
+            {
+                "completed": len(rendered_frames),
+                "in_progress": 0,
+                "total": total_zips,
+                "eta_str": "Building animation from frames...",
+                "active_chunk_progress": 1.0,
+            }
+        ))
         log("-" * 60)
         log(f"Building GIF from {len(rendered_frames)} frames…")
         progress(93.0)
@@ -9304,10 +9339,7 @@ class App(tk.Tk):
             if requested_y_max >= cached_y_max:
                 continue
 
-            has_above, observed_max = _surface_cache_has_any_top_above(cache_path, requested_y_max)
-            if not has_above:
-                continue
-            observed_max = max(observed_max, _surface_cache_max_top_y(cache_path, requested_y_max))
+            observed_max = cached_y_max
 
             raw_src = snap.raw_path or (snap.path if (not is_cache_file(snap.path)) else "")
             can_rescan = bool(raw_src) and (is_world_archive_file(raw_src) or is_world_folder(raw_src))
@@ -11680,8 +11712,10 @@ class App(tk.Tk):
 
     def _poll_messages(self):
         try:
-            while True:
+            count = 0
+            while count < 100:
                 kind, payload = self.msgq.get_nowait()
+                count += 1
                 if kind == "log":
                     self._log(payload, "timelapse")
                 elif kind == "status":
@@ -11712,6 +11746,11 @@ class App(tk.Tk):
                 elif kind == "done":
                     self._set_busy(False)
                     self.current_task = None
+                    self.eta_var.set("Complete")
+                    if hasattr(self, "progress_bar"):
+                        tot = getattr(self.progress_bar, "_total", 0)
+                        if tot > 0:
+                            self.progress_bar.set_progress(tot, 0, tot, 1.0)
                     if payload.get("cancelled"):
                         mode = str(payload.get("stopped_mode", "")).strip().lower()
                         if mode == "immediate":

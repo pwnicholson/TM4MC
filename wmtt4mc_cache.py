@@ -802,9 +802,16 @@ def discover_with_diagnostics(folder: str, log_cb: Optional[Callable] = None, di
     # Discover raw sources
     raw_sources = discover_raw_snapshot_sources(folder)
     log(f"[DISCOVERY] Found {len(raw_sources)} raw backup(s).")
-    for src in raw_sources:
-        diag["raw_sources"].append(src.display_name)
-        log(f"  - {src.display_name} (kind: {src.kind})")
+    if len(raw_sources) <= 20:
+        for src in raw_sources:
+            diag["raw_sources"].append(src.display_name)
+            log(f"  - {src.display_name} (kind: {src.kind})")
+    else:
+        for src in raw_sources:
+            diag["raw_sources"].append(src.display_name)
+        log(f"  - First 3: {', '.join(s.display_name for s in raw_sources[:3])}")
+        log(f"  - Last 3: {', '.join(s.display_name for s in raw_sources[-3:])}")
+        log(f"  - ({len(raw_sources) - 6} more omitted from log preview)")
     
     # Discover cache files
     cache_items = []
@@ -816,8 +823,13 @@ def discover_with_diagnostics(folder: str, log_cb: Optional[Callable] = None, di
         elif os.path.isfile(path) and name.lower().endswith(".wmtt4mc.tmp"):
             diag["ignored_tmp_files"].append(name)
     log(f"[DISCOVERY] Found {len(cache_items)} cache file(s).")
-    for name, path in cache_items:
-        log(f"  - {name}")
+    if len(cache_items) <= 20:
+        for name, path in cache_items:
+            log(f"  - {name}")
+    else:
+        log(f"  - First 3: {', '.join(c[0] for c in cache_items[:3])}")
+        log(f"  - Last 3: {', '.join(c[0] for c in cache_items[-3:])}")
+        log(f"  - ({len(cache_items) - 6} more omitted from log preview)")
     if diag["ignored_tmp_files"]:
         log(f"[DISCOVERY] Ignoring {len(diag['ignored_tmp_files'])} temporary cache file(s) (*.wmtt4mc.tmp).")
         for name in diag["ignored_tmp_files"]:
