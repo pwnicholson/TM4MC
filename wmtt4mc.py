@@ -225,6 +225,80 @@ class ScrollableFrame(ttk.Frame):
         self.canvas.yview_scroll(step, "units")
 
 
+class CanvasProgressBar(tk.Canvas):
+    """Custom progress bar widget showing:
+    - Solid area for completed frames
+    - Hashed/striped area for in-progress frames (with chunk progress fill inside active slices)
+    - Open/unfilled area for unprocessed frames
+    """
+    def __init__(self, parent, height=20, **kwargs):
+        super().__init__(parent, height=height, highlightthickness=1, relief="solid", borderwidth=1, **kwargs)
+        self.bind("<Configure>", self._on_resize)
+        self._completed = 0
+        self._in_progress = 0
+        self._total = 0
+        self._active_chunk_progress = 0.0
+        self._solid_color = "#107c41"       # Solid green/accent for completed
+        self._hash_bg_color = "#d87a00"    # Amber/orange base for active
+        self._hash_line_color = "#fce8b3"  # Lighter hatch line
+        self._open_bg_color = "#f5f5f5"     # Open / unprocessed area
+
+    def set_progress(self, completed: int, in_progress: int, total: int, active_chunk_progress: float = 0.0):
+        self._completed = max(0, completed)
+        self._in_progress = max(0, in_progress)
+        self._total = max(0, total)
+        self._active_chunk_progress = max(0.0, min(1.0, active_chunk_progress))
+        self.redraw()
+
+    def _on_resize(self, _event=None):
+        self.redraw()
+
+    def redraw(self):
+        self.delete("all")
+        w = self.winfo_width()
+        h = self.winfo_height()
+        if w <= 1 or h <= 1:
+            return
+
+        total = self._total
+        if total <= 0:
+            self.create_rectangle(0, 0, w, h, fill=self._open_bg_color, outline="")
+            return
+
+        slot_w = w / float(total)
+
+        for i in range(total):
+            x1 = int(round(i * slot_w))
+            x2 = int(round((i + 1) * slot_w))
+            if x2 <= x1:
+                x2 = x1 + 1
+
+            if i < self._completed:
+                # Solid completed frame
+                self.create_rectangle(x1, 0, x2, h, fill=self._solid_color, outline="")
+            elif i < self._completed + self._in_progress:
+                # Active / in-progress frame
+                fill_w = x2 - x1
+                solid_px = int(round(fill_w * self._active_chunk_progress)) if self._active_chunk_progress > 0 else 0
+                if solid_px > 0:
+                    self.create_rectangle(x1, 0, x1 + solid_px, h, fill=self._solid_color, outline="")
+                
+                hash_x1 = x1 + solid_px
+                if x2 > hash_x1:
+                    self.create_rectangle(hash_x1, 0, x2, h, fill=self._hash_bg_color, outline="")
+                    # Draw diagonal hash lines
+                    for lx in range(hash_x1 - h, x2 + h, 6):
+                        self.create_line(lx, h, lx + h, 0, fill=self._hash_line_color, width=2)
+            else:
+                # Open / unprocessed frame
+                self.create_rectangle(x1, 0, x2, h, fill=self._open_bg_color, outline="")
+
+            # Subtle vertical slot divider
+            if i > 0 and total <= 150:
+                self.create_line(x1, 0, x1, h, fill="#c0c0c0", width=1)
+
+
+
 # =============================================================================
 # Palette editor — shared helpers, widget classes, and state
 # =============================================================================
@@ -3067,20 +3141,7 @@ def normalize_log_text(s: str) -> str:
     return s.replace("\\r\\n", "\n").replace("\\n", "\n")
 
 
-def fmt_seconds(seconds: Optional[float]) -> str:
-    if seconds is None:
-        return ""
-    if seconds < 0:
-        seconds = 0
-    s = int(round(seconds))
-    h = s // 3600
-    m = (s % 3600) // 60
-    sec = s % 60
-    if h > 0:
-        return f"{h}h {m:02d}m {sec:02d}s"
-    if m > 0:
-        return f"{m}m {sec:02d}s"
-    return f"{sec}s"
+
 
 
 def safe_filename(name: str) -> str:
@@ -4400,151 +4461,7 @@ def is_world_archive_file(path: str) -> bool:
     return lower.endswith(".zip") or lower.endswith(".mcworld")
 
 
-_REGION_PATH_RE = re.compile(r"(?:^|/)region/r\.(-?\d+)\.(-?\d+)\.mca$", re.IGNORECASE)
 
-
-def _path_matches_dimension(path_lower: str, dimension: str) -> bool:
-    dim = str(dimension or "minecraft:overworld").strip().lower()
-    # Dimension folders are Java conventions; for overworld, exclude nether/end subfolders.
-    if dim == "minecraft:the_nether":
-        return "/dim-1/region/" in path_lower
-    if dim == "minecraft:the_end":
-        return "/dim1/region/" in path_lower
-    return ("/region/" in path_lower) and ("/dim-1/" not in path_lower) and ("/dim1/" not in path_lower)
-
-
-def _estimate_block_area_from_region_paths(paths: List[str], dimension: str) -> Optional[int]:
-    min_rx = min_rz = None
-    max_rx = max_rz = None
-    for raw_path in paths:
-        p = str(raw_path).replace("\\", "/")
-        low = p.lower()
-        if not _path_matches_dimension(low, dimension):
-            continue
-        m = _REGION_PATH_RE.search(low)
-        if not m:
-            continue
-        rx = int(m.group(1))
-        rz = int(m.group(2))
-        min_rx = rx if (min_rx is None) else min(min_rx, rx)
-        max_rx = rx if (max_rx is None) else max(max_rx, rx)
-        min_rz = rz if (min_rz is None) else min(min_rz, rz)
-        max_rz = rz if (max_rz is None) else max(max_rz, rz)
-
-    if None in (min_rx, max_rx, min_rz, max_rz):
-        return None
-
-    # A region is 32x32 chunks; a chunk is 16x16 blocks.
-    chunks_x = (int(max_rx) - int(min_rx) + 1) * 32
-    chunks_z = (int(max_rz) - int(min_rz) + 1) * 32
-    blocks_x = chunks_x * 16
-    blocks_z = chunks_z * 16
-    return max(1, int(blocks_x) * int(blocks_z))
-
-
-def _estimate_bedrock_block_area_from_entries(paths: List[str], size_lookup: Optional[Dict[str, int]] = None) -> Optional[int]:
-    db_bytes = 0
-    db_files = 0
-    for raw_path in paths:
-        p = str(raw_path).replace("\\", "/")
-        low = p.lower()
-        if "/db/" not in low:
-            continue
-        leaf = low.rsplit("/", 1)[-1]
-        if leaf in {"current", "lock", "manifest"}:
-            continue
-        if not (
-            leaf.endswith(".ldb")
-            or leaf.endswith(".sst")
-            or leaf.endswith(".log")
-            or leaf.startswith("manifest-")
-        ):
-            continue
-        db_files += 1
-        if size_lookup is not None:
-            db_bytes += int(size_lookup.get(raw_path, 0) or 0)
-
-    if db_files <= 0:
-        return None
-
-    # Heuristic: ~8 KiB of DB payload per active chunk entry.
-    if db_bytes <= 0:
-        est_chunks = max(64, db_files * 64)
-    else:
-        est_chunks = max(64, int(db_bytes // 8192))
-    return max(1, int(est_chunks) * 256)
-
-
-def estimate_snapshot_block_area_with_source(snapshot: SnapshotInput, dimension: str) -> Tuple[Optional[int], str]:
-    """Best-effort, fast block-area estimate for progress/ETA weighting.
-
-    Order of preference:
-    1) .wmtt4mc cache header bounds (exact cached extent)
-    2) Java region filenames (ZIP/folder metadata scan, no world load)
-    3) Bedrock LevelDB footprint heuristic (ZIP/folder metadata scan)
-    """
-    try:
-        path = snapshot.path
-        if is_cache_file(path) and os.path.isfile(path):
-            h = read_cache_header(path)
-            min_cx = int(h.get("min_cx"))
-            max_cx = int(h.get("max_cx"))
-            min_cz = int(h.get("min_cz"))
-            max_cz = int(h.get("max_cz"))
-            chunks_x = max(0, max_cx - min_cx + 1)
-            chunks_z = max(0, max_cz - min_cz + 1)
-            if chunks_x > 0 and chunks_z > 0:
-                return int(chunks_x * 16) * int(chunks_z * 16), "cache-header"
-    except Exception:
-        pass
-
-    src = snapshot.raw_path or snapshot.path
-    try:
-        if os.path.isfile(src) and is_world_archive_file(src) and zipfile.is_zipfile(src):
-            with zipfile.ZipFile(src, "r") as zf:
-                names = zf.namelist()
-                area = _estimate_block_area_from_region_paths(names, dimension)
-                if area is not None:
-                    return area, "java-region"
-                try:
-                    size_lookup = {zi.filename: int(getattr(zi, "file_size", 0) or 0) for zi in zf.infolist()}
-                except Exception:
-                    size_lookup = None
-                area = _estimate_bedrock_block_area_from_entries(names, size_lookup=size_lookup)
-                if area is not None:
-                    return area, "bedrock-db-size"
-                return None, "fallback"
-        if os.path.isdir(src):
-            region_candidates: List[str] = []
-            bedrock_candidates: List[str] = []
-            bedrock_sizes: Dict[str, int] = {}
-            for root, _dirs, files in os.walk(src):
-                for fn in files:
-                    full_path = os.path.join(root, fn)
-                    if fn.lower().endswith(".mca"):
-                        rel = os.path.relpath(full_path, src)
-                        region_candidates.append(rel)
-                    rel_any = os.path.relpath(full_path, src)
-                    bedrock_candidates.append(rel_any)
-                    try:
-                        bedrock_sizes[rel_any] = int(os.path.getsize(full_path))
-                    except Exception:
-                        pass
-            area = _estimate_block_area_from_region_paths(region_candidates, dimension)
-            if area is not None:
-                return area, "java-region"
-            area = _estimate_bedrock_block_area_from_entries(bedrock_candidates, size_lookup=bedrock_sizes)
-            if area is not None:
-                return area, "bedrock-db-size"
-    except Exception:
-        pass
-
-    return None, "fallback"
-
-
-def estimate_snapshot_block_area(snapshot: SnapshotInput, dimension: str) -> Optional[int]:
-    area, _source = estimate_snapshot_block_area_with_source(snapshot, dimension)
-    return area
 
 
 def _resolve_snapshot_world_roots(source_path: str, out_dir: str) -> Tuple[Optional[str], List[str]]:
@@ -6333,28 +6250,7 @@ def build_gif(frame_paths: List[str], out_gif: str, seconds_per_frame: float, lo
             pass
 
 
-class EtaSmoother:
-    def __init__(self, window: int = 5):
-        self.values = deque(maxlen=max(1, window))
 
-    def add(self, v: float) -> Optional[float]:
-        if v is None or v != v or v < 0:
-            return self.value()
-        self.values.append(float(v))
-        return self.value()
-
-    def value(self) -> Optional[float]:
-        if not self.values:
-            return None
-        return sum(self.values) / len(self.values)
-
-
-def estimate_remaining_seconds(elapsed: float, frac_done: float) -> Optional[float]:
-    if frac_done <= 0.005:
-        return None
-    total_est = elapsed / max(1e-6, frac_done)
-    rem = max(0.0, total_est - elapsed)
-    return rem
 
 
 def _machine_profile_key(has_psutil: bool) -> str:
@@ -6720,12 +6616,6 @@ def worker_run(snapshots: List[SnapshotInput],
                     _needs_build_count += 1
             total_needs_build = max(1, _needs_build_count)
             completed_builds = [0]
-            cache_phase_t0 = [time.time()]
-
-            def _fmt_cache_eta(secs: float) -> str:
-                s = max(0, int(secs))
-                return f"{s // 3600:02d}:{(s % 3600) // 60:02d}:{s % 60:02d}"
-
             for prep_i, snap in enumerate(snapshots, start=1):
                 if cancel_event.is_set():
                     log("[CACHE OUTPUT] Stop requested during cache preparation.")
@@ -6773,35 +6663,10 @@ def worker_run(snapshots: List[SnapshotInput],
                     continue
 
                 try:
-                    _build_seq = completed_builds[0] + 1
-                    _build_label = snap.display_name
-
-                    def _cache_progress_cb(
-                        done: int,
-                        total_chunks: int,
-                        frac: float,
-                        _bname: str = _build_label,
-                        _bseq: int = _build_seq,
-                        _btotal: int = total_needs_build,
-                    ) -> None:
-                        _overall = (completed_builds[0] + frac) / _btotal
-                        progress(_overall * 100.0)
-                        _elapsed = time.time() - cache_phase_t0[0]
-                        if _overall > 0.02 and _elapsed > 2.0:
-                            _rem = _elapsed / _overall - _elapsed
-                            _eta = _fmt_cache_eta(_rem)
-                        else:
-                            _eta = "--"
-                        status(
-                            f"Building caches ({_bseq}/{_btotal}): {_bname}",
-                            f"Chunk {done}/{total_chunks} — Cache build ETA {_eta}",
-                        )
-
                     status(
-                        f"Building caches ({_build_seq}/{total_needs_build}): {snap.display_name}",
-                        "Starting… (loading world)",
+                        f"Building caches: {snap.display_name}",
+                        "Loading world...",
                     )
-                    progress((completed_builds[0] / total_needs_build) * 100.0)
                     log(
                         f"[CACHE OUTPUT] {prep_i:02d}/{total_prep:02d} building cache for {snap.display_name} "
                         f"({reason})"
@@ -6821,7 +6686,7 @@ def worker_run(snapshots: List[SnapshotInput],
                         y_max=opt.y_max,
                         stop_on_bad_chunk_data=bool(getattr(opt, "stop_on_bad_chunk_data", False)),
                         log_cb=lambda m: log(f"[CACHE OUTPUT] {m}"),
-                        progress_cb=_cache_progress_cb,
+                        progress_cb=None,
                         cancel_event=cancel_event,
                     )
                     completed_builds[0] += 1
@@ -6990,64 +6855,180 @@ def worker_run(snapshots: List[SnapshotInput],
             else:
                 png_name = f"{key}.png"
             frame_png_by_path[snap.path] = os.path.join(frames_dir, png_name)
-        RENDER_WEIGHT = 92.0
-
-        # --- Block-based progress setup ---
-        # Estimate total blocks to render across all frames using cheap metadata scans.
-        total_blocks = 0
-        frame_block_counts = {}
-        known_areas: List[int] = []
-        # Use crop area as an upper bound when crop is enabled.
-        if opt.limit_enabled:
-            x1 = int(min(opt.x_min, opt.x_max))
-            x2 = int(max(opt.x_min, opt.x_max))
-            z1 = int(min(opt.z_min, opt.z_max))
-            z2 = int(max(opt.z_min, opt.z_max))
-        else:
-            # If not limited, use a large default (e.g., 5120x5120)
-            x1, x2, z1, z2 = 0, 5119, 0, 5119
-        width = abs(x2 - x1) + 1
-        height = abs(z2 - z1) + 1
-        crop_area = width * height
-
-        for snapshot in chronological:
-            est, est_source = estimate_snapshot_block_area_with_source(snapshot, opt.dimension)
-            if est is not None and est > 0:
-                if opt.limit_enabled:
-                    est = min(int(est), int(crop_area))
-                frame_block_counts[snapshot.path] = int(est)
-                known_areas.append(int(est))
+        job_start = time.time()
+        
+        # --- Chunk-based Progress & ETA Tracking Setup ---
+        def _estimate_raw_chunks_fallback(s) -> int:
             try:
-                if est is not None and est > 0:
-                    log(f"[ESTIMATE] {snapshot.display_name}: source={est_source}, area≈{int(est):,} blocks")
-                else:
-                    log(f"[ESTIMATE] {snapshot.display_name}: source={est_source}, area=unknown (using default)")
+                raw_src = s.raw_path or s.path
+                if os.path.isfile(raw_src):
+                    size = os.path.getsize(raw_src)
+                    return max(2000, min(12000, int(size / 20000)))
+                elif os.path.isdir(raw_src):
+                    total_size = 0
+                    for root, dirs, files in os.walk(raw_src):
+                        for f in files:
+                            total_size += os.path.getsize(os.path.join(root, f))
+                    return max(2000, min(12000, int(total_size / 80000)))
             except Exception:
                 pass
+            return 5000
 
-        default_area = int(crop_area)
-        if (not opt.limit_enabled) and known_areas:
-            # Median known area is more stable than a hard-coded giant default.
-            s = sorted(known_areas)
-            default_area = int(s[len(s) // 2])
-        elif (not opt.limit_enabled) and (not known_areas):
-            default_area = 5120 * 5120
+        snapshot_known_chunks: Dict[str, int] = {}
+        requested_cache_mode = str(output_cache_mode or "").strip().lower()
 
-        for snapshot in chronological:
-            if snapshot.path not in frame_block_counts:
-                frame_block_counts[snapshot.path] = int(default_area)
-            total_blocks += int(frame_block_counts[snapshot.path])
+        # Try to find known chunk counts from existing caches
+        for snap in chronological:
+            val = None
+            if is_cache_file(snap.path):
+                try:
+                    h = read_cache_header(snap.path)
+                    val = int(h.get("chunks_total", 0))
+                except Exception:
+                    pass
+            else:
+                raw_src = snap.raw_path or snap.path
+                if raw_src:
+                    for mode in (requested_cache_mode, CACHE_MODE_SURFACE, CACHE_MODE_ALL_BLOCKS):
+                        if not mode or mode == CACHE_MODE_NONE:
+                            continue
+                        cp = sidecar_cache_path(raw_src, opt.dimension, mode)
+                        if os.path.isfile(cp):
+                            try:
+                                h = read_cache_header(cp)
+                                val = int(h.get("chunks_total", 0))
+                                break
+                            except Exception:
+                                pass
+            if val is not None and val > 0:
+                snapshot_known_chunks[snap.path] = val
 
-        try:
-            log(
-                f"Block estimate: total≈{int(total_blocks):,} across {total_zips} frame(s) "
-                f"(known={len(known_areas)}, default={int(default_area):,}/frame)"
-            )
-        except Exception:
-            pass
-        blocks_rendered = 0
-        dynamic_area_refined = False
-        job_start = time.time()
+        def _recalculate_snapshot_chunk_estimates() -> Dict[str, int]:
+            estimates: Dict[str, int] = {}
+            known_indices = []
+            for idx, snap in enumerate(chronological):
+                if snap.path in snapshot_known_chunks:
+                    estimates[snap.path] = snapshot_known_chunks[snap.path]
+                    known_indices.append(idx)
+            
+            step_ratios = []
+            if len(known_indices) >= 2:
+                for k in range(len(known_indices) - 1):
+                    i1 = known_indices[k]
+                    i2 = known_indices[k + 1]
+                    c1 = snapshot_known_chunks[chronological[i1].path]
+                    c2 = snapshot_known_chunks[chronological[i2].path]
+                    if c1 > 0 and c2 > 0 and i2 > i1:
+                        ratio_per_step = (c2 / c1) ** (1.0 / (i2 - i1))
+                        step_ratios.append(max(0.75, min(1.05, ratio_per_step)))
+
+            trend_ratio = (sum(step_ratios) / len(step_ratios)) if step_ratios else 0.98
+
+            for idx, snap in enumerate(chronological):
+                if snap.path in estimates:
+                    continue
+                newer_known = [k for k in known_indices if k < idx]
+                older_known = [k for k in known_indices if k > idx]
+                if newer_known:
+                    k = max(newer_known)
+                    base_c = snapshot_known_chunks[chronological[k].path]
+                    projected = int(round(base_c * (trend_ratio ** (idx - k))))
+                    estimates[snap.path] = max(100, projected)
+                elif older_known:
+                    k = min(older_known)
+                    base_c = snapshot_known_chunks[chronological[k].path]
+                    projected = int(round(base_c / (trend_ratio ** (k - idx))))
+                    estimates[snap.path] = max(100, projected)
+                else:
+                    estimates[snap.path] = _estimate_raw_chunks_fallback(snap)
+
+            return estimates
+
+        frame_completion_history = deque(maxlen=10)
+        completed_chunks_rendered_only = 0.0
+        last_eta_calc_time = 0.0
+        last_eta_val = None
+
+        def _send_progress_eta_update(active, queued, completed_frames):
+            nonlocal last_eta_calc_time, last_eta_val, completed_chunks_rendered_only
+            now = time.time()
+            current_estimates = _recalculate_snapshot_chunk_estimates()
+            total_chunks_project = sum(current_estimates.values())
+            
+            completed_chunks = completed_chunks_rendered_only
+            for snap in snapshots:
+                if any(x[0] == snap.display_name for x in skipped):
+                    completed_chunks += current_estimates.get(snap.path, 5000)
+            
+            remaining_chunks = max(0.0, total_chunks_project - completed_chunks)
+            
+            # Smooth ETA calculation, updating every 15 seconds (10-20s requirement)
+            if last_eta_val is None or (now - last_eta_calc_time) >= 15.0:
+                last_eta_calc_time = now
+                overall_elapsed = max(1.0, now - job_start)
+                overall_speed = completed_chunks_rendered_only / overall_elapsed
+                
+                moving_speed = None
+                if len(frame_completion_history) >= 2:
+                    t_old, _ = frame_completion_history[0]
+                    t_new, _ = frame_completion_history[-1]
+                    time_diff = t_new - t_old
+                    if time_diff > 3.0:
+                        chunks_window = sum(ch for _, ch in list(frame_completion_history)[1:])
+                        moving_speed = chunks_window / time_diff
+                
+                if moving_speed is not None and moving_speed > 0:
+                    current_speed = 0.7 * moving_speed + 0.3 * overall_speed
+                else:
+                    current_speed = overall_speed
+                
+                if current_speed > 0 and (completed_frames > 0 or completed_chunks_rendered_only > 0):
+                    raw_rem_sec = (remaining_chunks / current_speed) * 1.05
+                    if last_eta_val is None:
+                        last_eta_val = raw_rem_sec
+                    else:
+                        last_eta_val = 0.7 * raw_rem_sec + 0.3 * last_eta_val
+                else:
+                    last_eta_val = None
+            
+            if last_eta_val is not None and completed_frames < total_zips:
+                total_seconds = int(round(last_eta_val))
+                hours = total_seconds // 3600
+                minutes = (total_seconds % 3600) // 60
+                seconds = total_seconds % 60
+                
+                if hours > 0:
+                    eta_str = f"Estimated time remaining: {hours}h {minutes}m {seconds}s"
+                elif minutes > 0:
+                    eta_str = f"Estimated time remaining: {minutes}m {seconds}s"
+                else:
+                    eta_str = f"Estimated time remaining: {seconds}s"
+            elif completed_frames >= total_zips:
+                eta_str = "ETA: Complete"
+            else:
+                eta_str = "ETA: Estimating..."
+
+            active_chunk_progress = 0.0
+            if active > 0 and in_flight_frames:
+                with frame_lock:
+                    elapsed_list = [now - st for (_snap, _zi, st, _src, _stage) in in_flight_frames.values()]
+                if zip_times and elapsed_list:
+                    avg_frame_time = sum(zip_times) / len(zip_times)
+                    if avg_frame_time > 0:
+                        progs = [min(0.95, el / avg_frame_time) for el in elapsed_list]
+                        active_chunk_progress = sum(progs) / len(progs)
+
+            msgq.put((
+                "progress_update",
+                {
+                    "completed": completed_frames,
+                    "in_progress": active,
+                    "total": total_zips,
+                    "eta_str": eta_str,
+                    "active_chunk_progress": active_chunk_progress,
+                }
+            ))
+
         last_error_reason = ""
         repeated_error_count = 0
         repeated_error_abort = False
@@ -7096,17 +7077,10 @@ def worker_run(snapshots: List[SnapshotInput],
         cpu_samples: deque = deque(maxlen=6)
         last_concurrency_change = 0.0
         concurrency_cooldown = 4.0
-        overall_eta_smoother = EtaSmoother(window=5)
-        # More conservative startup frame ETA (120 sec = 2 min, for first few frames with cache loading overhead)
-        startup_frame_eta_guess_s = 120.0
-        # Track frame render times with separate smoothers for better ETA after startup
-        first_frame_eta_smoother = EtaSmoother(window=3)  # First build/learning phase
-        steady_state_eta_smoother = EtaSmoother(window=8)  # After 2-3 frames
         stuck_frame_check_interval = 15.0  # seconds
         last_stuck_check = time.time()
         STUCK_FRAME_THRESHOLD = 2 * 60 * 60  # 2 hours in seconds
-        # Guard against long "98%" hangs: trigger early fallback when no future completes.
-        # We start conservative, then adapt once we have observed frame times.
+        # Guard against long hangs: trigger early fallback when no future completes.
         NO_COMPLETION_STALL_THRESHOLD = 8 * 60  # baseline 8 minutes
         last_completion_t = time.time()
         force_early_shutdown = False
@@ -7138,17 +7112,6 @@ def worker_run(snapshots: List[SnapshotInput],
                     return max(0.0, time.time() - float(st.st_mtime))
                 except Exception:
                     return None
-
-            def _parse_stage_progress(stage: str) -> Optional[Tuple[int, int]]:
-                try:
-                    s = str(stage or "").strip().lower()
-                    if not s.startswith("raw.chunk_scan.progress"):
-                        return None
-                    tail = s.rsplit(" ", 1)[-1]
-                    parts = tail.split("/", 1)
-                    if len(parts) != 2:
-                        return None
-                    done = int(parts[0])
                     total = int(parts[1])
                     if total <= 0:
                         return None
@@ -7411,7 +7374,8 @@ def worker_run(snapshots: List[SnapshotInput],
                                     try:
                                         if os.path.isfile(fpng) and os.path.getsize(fpng) > 0:
                                             rendered_frames.append((fno, fpng, None))
-                                            blocks_rendered += frame_block_counts.get(s.path, 1)
+                                            actual_chunks = snapshot_chunk_estimates.get(s.path, 5000)
+                                            completed_chunks_rendered_only += actual_chunks
                                             salvaged_now += 1
                                             log(f"[STALL RECOVER] Using already-written frame: {os.path.basename(fpng)}")
                                             continue
@@ -7457,6 +7421,10 @@ def worker_run(snapshots: List[SnapshotInput],
                                 frame_no = frame_no_by_path.get(snapshot.path, zip_i)
                                 frame_png = frame_png_by_path.get(snapshot.path, os.path.join(frames_dir, f"frame_{zip_i:04d}.png"))
                                 rendered_frames.append((frame_no, frame_png, bounds))
+                                actual_chunks = bounds[4] if (bounds is not None and len(bounds) > 4) else current_estimates.get(snapshot.path, 5000)
+                                snapshot_known_chunks[snapshot.path] = actual_chunks
+                                completed_chunks_rendered_only += actual_chunks
+                                frame_completion_history.append((time.time(), actual_chunks))
                                 elapsed = max(0.0, time.time() - float(start_time or time.time()))
                                 zip_times.append(elapsed)
                                 observed_src = _source_label(snapshot, _stage)
@@ -7465,11 +7433,6 @@ def worker_run(snapshots: List[SnapshotInput],
                                 else:
                                     cache_zip_times.append(elapsed)
                                 log(f"[FRAME DONE] #{zip_i:03d}/{total_zips:03d} {name} in {elapsed:.1f}s")
-                                if (not opt.limit_enabled) and (not dynamic_area_refined) and bounds is not None:
-                                    # Keep per-frame estimates stable to avoid large progress/ETA jumps.
-                                    dynamic_area_refined = True
-                                # Add blocks for this frame
-                                blocks_rendered += frame_block_counts.get(snapshot.path, 1)
                                 last_error_reason = ""
                                 repeated_error_count = 0
                         else:
@@ -7519,129 +7482,10 @@ def worker_run(snapshots: List[SnapshotInput],
                 with frame_lock:
                     in_flight = sum(1 for f in in_flight_frames.keys() if not f.done())
                 pending = len(pending_zips_queue)
-                # Live block counter update
-                now = time.time()
-                if now - last_block_update > 1.0:
-                    msgq.put(("live_blocks", blocks_rendered))
-                    last_block_update = now
 
-                now = time.time()
-                avg_frame_seconds = (sum(zip_times) / len(zip_times)) if zip_times else None
-                with frame_lock:
-                    inflight_snapshot = list(in_flight_frames.values())
-                inflight_raw = sum(1 for _snapshot, _zip_i, _start, src, _stage in inflight_snapshot if str(src).lower() == "raw")
-                inflight_cache = max(0, len(inflight_snapshot) - inflight_raw)
-                pending_raw = sum(1 for snap, _zip_i in pending_zips_queue if _source_label(snap) == "raw")
-                pending_cache = max(0, len(pending_zips_queue) - pending_raw)
-                inflight_frame_progress = 0.0
-                raw_live_remaining_seconds = 0.0
-                raw_live_chunk_rates: List[float] = []
-                pending_raw_chunk_est = 0.0
-                for _snapshot, _zip_i, start_time, _src, _stage in inflight_snapshot:
-                    elapsed = max(0.0, now - float(start_time or now))
-                    denom = float(avg_frame_seconds) if (avg_frame_seconds and avg_frame_seconds > 1.0) else startup_frame_eta_guess_s
-                    inflight_frame_progress += min(0.95, max(0.01, elapsed / max(1.0, denom)))
 
-                    if str(_src).lower() == "raw":
-                        parsed = _parse_stage_progress(_read_last_stage(_stage))
-                        if parsed is not None:
-                            done_chunks, total_chunks = parsed
-                            if done_chunks > 100 and elapsed > 10.0:
-                                rate = float(done_chunks) / max(1.0, elapsed)
-                                if rate > 0.01:
-                                    raw_live_chunk_rates.append(rate)
-                                    remaining_chunks = max(0, total_chunks - done_chunks)
-                                    raw_live_remaining_seconds += float(remaining_chunks) / rate
-
-                for snap, _zip_i in pending_zips_queue:
-                    if _source_label(snap) != "raw":
-                        continue
-                    pending_raw_chunk_est += max(1.0, float(frame_block_counts.get(snap.path, 256)) / 256.0)
-
-                effective_done_frames = min(float(total_zips), float(rendered_count) + inflight_frame_progress)
-                frame_frac_done = effective_done_frames / max(1.0, float(total_zips))
-
-                # Block-based completion: completed frames only (no in-flight inflation).
-                blocks_done = max(0.0, float(blocks_rendered))
-                blocks_total = max(1.0, float(total_blocks))
-                block_frac_done = min(1.0, blocks_done / blocks_total)
-                block_percent = int(round(block_frac_done * 100.0))
-                eta_str = "--"
-                eta_est = None
-                
-                # Improved ETA logic with source-aware timing so fast cache frames do not
-                # unrealistically collapse ETA while long raw frames are still pending.
-                if finished_count >= 1:
-                    cache_avg_seconds = (sum(cache_zip_times) / len(cache_zip_times)) if cache_zip_times else None
-                    raw_avg_seconds = (sum(raw_zip_times) / len(raw_zip_times)) if raw_zip_times else None
-
-                    if cache_avg_seconds is None:
-                        # No completed cache frame yet; use a conservative but responsive default.
-                        cache_avg_seconds = min(60.0, float(avg_frame_seconds or startup_frame_eta_guess_s))
-
-                    if raw_avg_seconds is None:
-                        raw_elapsed_now = [
-                            max(0.0, now - float(start_time or now))
-                            for _snapshot, _zip_i, start_time, src, _stage in inflight_snapshot
-                            if str(src).lower() == "raw"
-                        ]
-                        if raw_live_chunk_rates:
-                            med_rate = sorted(raw_live_chunk_rates)[len(raw_live_chunk_rates) // 2]
-                            if med_rate > 0.01:
-                                raw_live_remaining_seconds += pending_raw_chunk_est / med_rate
-                                raw_avg_seconds = max(60.0, raw_live_remaining_seconds / max(1.0, float(max(1, inflight_raw + pending_raw))))
-                            else:
-                                raw_avg_seconds = startup_frame_eta_guess_s * 4.0
-                        elif raw_elapsed_now:
-                            # Bootstrap raw ETA from current in-flight raw duration, biased high
-                            # until at least one raw frame completes.
-                            raw_avg_seconds = max(startup_frame_eta_guess_s * 4.0, max(raw_elapsed_now) * 1.5)
-                        elif (pending_raw + inflight_raw) > 0:
-                            raw_avg_seconds = startup_frame_eta_guess_s * 4.0
-                        else:
-                            raw_avg_seconds = cache_avg_seconds
-
-                    remaining_frame_seconds = (
-                        float(pending_cache + inflight_cache) * float(cache_avg_seconds)
-                        + float(pending_raw + inflight_raw) * float(raw_avg_seconds)
-                    )
-                    effective_parallel = max(1.0, float(in_flight))
-                    eta_est = remaining_frame_seconds / effective_parallel
-                    
-                    # Use appropriate smoother based on progression
-                    if finished_count <= 2:
-                        # During startup (first 1-2 frames), use quick-response smoother
-                        first_frame_eta_smoother.add(eta_est)
-                        smooth_eta = first_frame_eta_smoother.value()
-                    else:
-                        # After 2+ frames completed, blend into steady-state smoother for stability
-                        steady_state_eta_smoother.add(eta_est)
-                        smooth_eta = steady_state_eta_smoother.value()
-                    
-                    if smooth_eta is not None:
-                        overall_eta_smoother.add(smooth_eta)
-                        eta_val = overall_eta_smoother.value()
-                    else:
-                        eta_val = eta_est
-                elif block_frac_done > 0.005:
-                    elapsed_total = max(0.001, now - job_start)
-                    eta_est = estimate_remaining_seconds(elapsed_total, block_frac_done)
-                    if eta_est is not None:
-                        overall_eta_smoother.add(eta_est)
-                        eta_val = overall_eta_smoother.value()
-                    else:
-                        eta_val = None
-                else:
-                    eta_val = None
-
-                if eta_val is not None:
-                    displayed_eta_str = fmt_seconds(eta_val)
-                status(
-                    f"Frames rendered: {len(rendered_frames)}/{total_zips} | Block progress: {block_percent}% complete | ETA: {displayed_eta_str}",
-                    f"{in_flight} in-flight | {pending} queued"
-                )
-
-                progress(block_frac_done * RENDER_WEIGHT)
+                status("Rendering timelapse...", f"{in_flight} in-flight | {pending} queued")
+                _send_progress_eta_update(in_flight, pending, finished_count)
                 if repeated_error_abort:
                     break
         finally:
@@ -7668,7 +7512,7 @@ def worker_run(snapshots: List[SnapshotInput],
         if retry_items and (not cancel_event.is_set()):
             log("-" * 60)
             log(f"[STALL] Retrying {len(retry_items)} frame(s) sequentially after stall...")
-            for snapshot, zip_i, src_label in retry_items:
+            for i_retry, (snapshot, zip_i, src_label) in enumerate(retry_items):
                 name = snapshot.display_name
                 frame_no = frame_no_by_path.get(snapshot.path, zip_i)
                 frame_png = frame_png_by_path.get(snapshot.path, os.path.join(frames_dir, f"frame_{zip_i:04d}.png"))
@@ -7731,7 +7575,10 @@ def worker_run(snapshots: List[SnapshotInput],
 
                 if success:
                     rendered_frames.append((frame_no, frame_png, bounds))
-                    blocks_rendered += frame_block_counts.get(snapshot.path, 1)
+                    actual_chunks = bounds[4] if (bounds is not None and len(bounds) > 4) else snapshot_chunk_estimates.get(snapshot.path, 5000)
+                    snapshot_chunk_estimates[snapshot.path] = actual_chunks
+                    completed_chunks_rendered_only += actual_chunks
+                    frame_completion_history.append((time.time(), actual_chunks))
                     log(f"[FRAME RETRY DONE] #{zip_i:03d}/{total_zips:03d} {name}")
                 else:
                     reason = error_reason or "Retry failed"
@@ -7739,6 +7586,9 @@ def worker_run(snapshots: List[SnapshotInput],
                     log(f"[FRAME RETRY FAILED] {name}: {reason}")
                     if error_log_path:
                         log(f"  error log: {error_log_path}")
+
+                finished_count = len(rendered_frames) + len(skipped)
+                _send_progress_eta_update(0, len(retry_items) - (i_retry + 1), finished_count)
 
         run_elapsed = max(0.0, time.time() - job_start)
         _record_auto_tuner_result(
@@ -7983,39 +7833,17 @@ def _render_frame_task(
         except Exception:
             pass
 
-    def _progress_stage(done: int, total: int, _pct: float) -> None:
-        nonlocal _last_stage_progress_emit
-        if total <= 0:
-            return
-        now = time.time()
-        # Throttle stage updates so we avoid excessive file writes.
-        if done != total and (now - _last_stage_progress_emit) < 8.0:
-            return
-        _last_stage_progress_emit = now
-        _write_stage(f"raw.chunk_scan.progress {int(done)}/{int(total)}")
+    header = f"Frame {zip_i}/{total_zips}: {name}"
+    opt_for_frame = opt
 
     try:
         _write_stage("frame.start")
-        header = (
-            f"Snapshot: {name}\n"
-            f"Source path: {snapshot.path}\n"
-            f"Dimension: {opt.dimension}\n"
-            f"Y range: [{opt.y_min},{opt.y_max}]\n"
-            f"Target: {opt.target_preset}\n"
-            f"Workers: {opt.workers}\n"
-            f"Fast scan: {opt.fast_scan}\n"
-            f"Aggressive mode: {opt.aggressive_mode}\n"
-            f"Time: {time.strftime('%Y-%m-%d %H:%M:%S')}\n"
-            f"NOTE: Unknown IDs are rendered gray and listed in this file.\n"
-        )
-        opt_for_frame = clone_render_options(opt)
-        opt_for_frame.workers = max(1, int(opt.workers))
         bounds = render_snapshot_input(
             snapshot,
             frame_png,
             opt_for_frame,
             log_cb=None,
-            progress_cb=_progress_stage,
+            progress_cb=None,
             cancel_event=cancel_event,
             debug_snapshot_path=debug_snapshot_path,
             debug_context_header=header,
@@ -8166,41 +7994,6 @@ def cache_build_worker(
     def log(msg: str):
         msgq.put(("log", msg))
 
-    def _fmt_eta(seconds: float) -> str:
-        s = max(0, int(seconds))
-        return f"{s // 3600:02d}:{(s % 3600) // 60:02d}:{s % 60:02d}"
-
-    # Determine how many cache builds to run concurrently.
-    # Each concurrent cache build spins up its own subprocess + extracts the world to a
-    # temp folder.  The bottleneck is typically I/O (zip extraction + LevelDB reads), so
-    # parallelism helps significantly.  Cap based on available RAM/cores.
-    try:
-        import psutil as _psutil
-        _logical = int(os.cpu_count() or 1)
-        _mem_gb = int(round(float(_psutil.virtual_memory().total) / (1024.0 ** 3)))
-        # Rule of thumb: allow ~2 GB per concurrent build; also don't flood CPUs.
-        _by_mem = max(1, min(8, _mem_gb // 2))
-        _by_cpu = max(1, min(8, _logical // 2))
-        cache_concurrency = max(1, min(_by_mem, _by_cpu))
-    except Exception:
-        _logical = int(os.cpu_count() or 1)
-        cache_concurrency = max(1, min(4, _logical // 2))
-
-    if total_items == 1:
-        cache_concurrency = 1  # no point spinning up an executor for one item
-
-    log(f"Cache build concurrency: {cache_concurrency} simultaneous build(s) for {total_items} item(s)")
-
-    build_start = time.time()
-
-    # Shared state guarded by a lock (multiple threads update these).
-    _state_lock = threading.Lock()
-    known_chunk_totals: List[int] = []
-    completed_chunk_units = [0.0]           # list so closure can mutate
-    items_finished = [0]                    # items fully done (built+skipped+failed)
-    eta_last_display_t = [0.0]
-    eta_last_text = ["ETA estimating..."]
-
     # Enumerate all (snapshot, dimension) work items up front.
     work_items: List[Tuple[int, Any, str]] = []  # (item_index, snapshot, dimension)
     for snap_idx, snapshot in enumerate(snapshots):
@@ -8225,61 +8018,22 @@ def cache_build_worker(
             return {"status": "skipped", "item_index": item_index, "item_label": item_label}
 
         msgq.put(("status", (
-            f"Building cache {item_index}/{total_items}: {item_label}",
+            f"Building cache: {item_label}",
             f"Mode: {cache_mode} | Y=[{y_min},{y_max}] | {cache_concurrency} parallel",
         )))
-
-        # Per-item chunk progress callback — thread-safe.
-        _local_seen_total: List[Optional[int]] = [None]
-        _local_last_done: List[int] = [0]
-
-        def chunk_progress(done: int, chunks_total: int, frac_done: float,
-                           _item_idx=item_index, _display=item_label):
-            _local_seen_total[0] = int(chunks_total)
-            _local_last_done[0] = int(done)
-
-            with _state_lock:
-                known = list(known_chunk_totals)
-                known.append(int(chunks_total))
-                avg_chunks = float(sum(known)) / max(1, len(known))
-                finished = int(items_finished[0])
-                done_units = float(completed_chunk_units[0]) + float(done)
-                remaining_items = max(0, total_items - finished - 1)
-                est_total_units = done_units + (avg_chunks * remaining_items)
-                remaining_units = max(0.0, est_total_units - done_units)
-                overall_frac = min(1.0, (finished + frac_done) / max(1, total_items))
-
-                now = time.time()
-                elapsed = max(0.001, now - build_start)
-                cum_rate = done_units / elapsed
-
-                show_eta = cum_rate > 0.01 and done_units >= 50.0 and elapsed >= 10.0 and remaining_units > 0.0
-                if show_eta and (now - eta_last_display_t[0]) >= 5.0:
-                    eta_secs = remaining_units / max(0.01, cum_rate)
-                    eta_last_text[0] = f"ETA ~{_fmt_eta(eta_secs)}"
-                    eta_last_display_t[0] = now
-                eta_text = eta_last_text[0]
-
-            msgq.put(("progress", overall_frac * 100.0))
-            msgq.put(("status", (
-                f"Building cache {_item_idx}/{total_items}: {_display}",
-                f"Overall {overall_frac * 100.0:5.1f}% | Chunks {done}/{chunks_total} "
-                f"({frac_done * 100.0:.1f}%) | Rate {cum_rate:.1f} chunks/s | {eta_text}",
-            )))
 
         try:
             cache_stats: Dict[str, Any] = {}
             build_snapshot_cache(
                 snapshot, cache_mode, dimension, y_min, y_max,
                 stop_on_bad_chunk_data=bool(stop_on_bad_chunk_data),
-                log_cb=log, progress_cb=chunk_progress, cancel_event=cancel_event,
+                log_cb=log, progress_cb=None, cancel_event=cancel_event,
                 stats_out=cache_stats,
             )
             return {
                 "status": "built",
                 "item_index": item_index,
                 "item_label": item_label,
-                "chunks_total": _local_seen_total[0],
                 "cache_stats": cache_stats,
             }
         except CancelledError:
@@ -8289,16 +8043,16 @@ def cache_build_worker(
             if "no chunks found" in msg.lower():
                 log(f"Skipping {item_label}: dimension has no chunks ({msg})")
                 return {"status": "skipped_no_chunks", "item_index": item_index,
-                        "item_label": item_label, "chunks_last": _local_last_done[0]}
+                        "item_label": item_label}
             log(f"Cache build failed for {item_label}: {type(e).__name__}: {e}")
             log(traceback.format_exc())
             return {"status": "failed", "item_index": item_index,
-                    "item_label": item_label, "chunks_last": _local_last_done[0]}
+                    "item_label": item_label}
         except Exception as e:
             log(f"Cache build failed for {item_label}: {type(e).__name__}: {e}")
             log(traceback.format_exc())
             return {"status": "failed", "item_index": item_index,
-                    "item_label": item_label, "chunks_last": _local_last_done[0]}
+                    "item_label": item_label}
 
     try:
         with ThreadPoolExecutor(max_workers=cache_concurrency) as ex:
@@ -8333,19 +8087,14 @@ def cache_build_worker(
                                 })
                     elif status_val in ("skipped", "skipped_no_chunks"):
                         total_skipped += 1
-                        cl = result.get("chunks_last", 0)
-                        completed_chunk_units[0] += float(cl)
                     elif status_val == "failed":
                         total_failed += 1
-                        cl = result.get("chunks_last", 0)
-                        completed_chunk_units[0] += float(cl)
                     elif status_val == "cancelled":
                         pass
 
         if cancel_event.is_set():
             raise CancelledError("Cancelled during cache build.")
 
-        msgq.put(("progress", 100.0))
         msgq.put(("cache_done", {
             "built": total_built,
             "skipped": total_skipped,
@@ -8407,7 +8156,6 @@ def debug_one_chunk_worker(
             raise CancelledError("Cancelled before start.")
 
         status(f"Debug: extracting {name}…", "")
-        progress(5.0)
 
         with tempfile.TemporaryDirectory() as tmp:
             extract_root, candidates = unzip_world_find_roots(zip_path, tmp)
@@ -8466,7 +8214,6 @@ def debug_one_chunk_worker(
             )
 
             status(f"Debug: rendering chunk ({cx},{cz})…", "")
-            progress(30.0)
 
             opt2 = clone_render_options(opt)
             opt2.debug_block_samples = True
@@ -8482,7 +8229,6 @@ def debug_one_chunk_worker(
                 debug_scale=16,
             )
 
-            progress(100.0)
             log("Debug complete.")
             log(f"PNG: {out_png}")
             log(f"Report: {out_txt}")
@@ -8541,7 +8287,6 @@ def preflight_report_worker(
             msgq.put(("progress", v))
 
         status("Running preflight report…", "Scanning backups and cache files.")
-        progress(5.0)
 
         log(f"{APP_NAME} v{APP_VERSION} (build {APP_BUILD})")
         log(f"Preflight folder: {report_dir}")
@@ -8573,7 +8318,6 @@ def preflight_report_worker(
             log_cb=_diag_log,
             dimension=opt.dimension,
         )
-        progress(35.0)
 
         if cancel_event and cancel_event.is_set():
             raise CancelledError("Cancelled during discovery.")
@@ -8648,7 +8392,6 @@ def preflight_report_worker(
         log(f"  Planned cache-backed items: {cache_count}")
         log(f"  Planned raw items: {raw_count}")
         log(f"  Total planned items: {len(plan_items)}")
-        progress(80.0)
 
         report_obj: Dict[str, Any] = {
             "generated_utc": datetime.utcnow().isoformat(timespec="seconds") + "Z",
@@ -8891,7 +8634,10 @@ class App(tk.Tk):
         # Status/progress
         self.status1_var = tk.StringVar(value="Ready.")
         self.status2_var = tk.StringVar(value="")
-        self.progress_var = tk.DoubleVar(value=0.0)
+        self.frames_completed_var = tk.StringVar(value="")
+        self.frames_progress_var = tk.StringVar(value="")
+        self.frames_total_var = tk.StringVar(value="")
+        self.eta_var = tk.StringVar(value="")
         self.busy_var = tk.BooleanVar(value=False)
 
         self._build_ui()
@@ -9283,11 +9029,20 @@ class App(tk.Tk):
         bottom = ttk.Frame(parent)
         bottom.pack(fill="both", expand=True, padx=10, pady=8)
 
-        self.progress = ttk.Progressbar(bottom, variable=self.progress_var, maximum=100.0)
-        self.progress.pack(fill="x", expand=True)
-
         ttk.Label(bottom, textvariable=self.status1_var).pack(anchor="w")
         ttk.Label(bottom, textvariable=self.status2_var).pack(anchor="w")
+
+        progress_frame = ttk.Frame(bottom)
+        progress_frame.pack(fill="x", pady=(4, 2))
+
+        ttk.Label(progress_frame, textvariable=self.frames_completed_var).pack(anchor="w")
+        ttk.Label(progress_frame, textvariable=self.frames_progress_var).pack(anchor="w")
+        ttk.Label(progress_frame, textvariable=self.frames_total_var).pack(anchor="w")
+
+        self.progress_bar = CanvasProgressBar(progress_frame, height=20)
+        self.progress_bar.pack(fill="x", pady=(4, 4))
+
+        ttk.Label(progress_frame, textvariable=self.eta_var).pack(anchor="w")
 
         buttons = ttk.Frame(bottom)
         buttons.pack(fill="x", pady=(6, 0))
@@ -11279,15 +11034,20 @@ class App(tk.Tk):
         except Exception:
             pass
 
+    def _clear_progress_vars(self):
+        try:
+            self.frames_completed_var.set("")
+            self.frames_progress_var.set("")
+            self.frames_total_var.set("")
+            self.eta_var.set("")
+            if hasattr(self, "progress_bar"):
+                self.progress_bar.set_progress(0, 0, 0, 0.0)
+        except Exception:
+            pass
+
     def _set_status(self, line1: str, line2: str = ""):
         self.status1_var.set(normalize_log_text(line1))
         self.status2_var.set(normalize_log_text(line2))
-
-    def _set_progress(self, v: float):
-        try:
-            self.progress_var.set(float(v))
-        except Exception:
-            pass
 
     def _set_busy(self, busy: bool):
         self.busy_var.set(bool(busy))
@@ -11562,8 +11322,8 @@ class App(tk.Tk):
         self.current_task = "timelapse"
         self.stop_control["mode"] = "partial_gif"
         self.auto_crop_result_var.set("")
+        self._clear_progress_vars()
         self._set_busy(True)
-        self._set_progress(0.0)
         self._set_status("Starting…", "")
         self._log("-" * 60, "timelapse")
         if int(opt.y_max) != original_y_max:
@@ -11748,12 +11508,11 @@ class App(tk.Tk):
         self.cancel_event.clear()
         self.current_task = "cache"
         self.stop_control["mode"] = "immediate"
+        self._clear_progress_vars()
         self._set_busy(True)
-        self._set_progress(0.0)
         self._set_status("Starting cache build…", "")
         self._log("-" * 60, "timelapse")
         self._log(f"Cache build candidates: {len(raw_sources)} | mode={cache_mode} | dims={', '.join(selected_dims)}", "timelapse")
-        self._log("Progress bar = overall cache-build progress across all snapshots; status line also shows current-snapshot chunk progress.", "timelapse")
 
         def runner():
             cache_build_worker(
@@ -11817,6 +11576,7 @@ class App(tk.Tk):
         self.cancel_event.clear()
         self.current_task = "single"
         self.stop_control["mode"] = "immediate"
+        self._clear_progress_vars()
         self._log("-" * 60, "single")
         self._log(f"Rendering single map from: {zip_path}", "single")
         self._set_status("Rendering single map…", "")
@@ -11829,7 +11589,7 @@ class App(tk.Tk):
                     out_png,
                     opt,
                     log_cb=lambda m: self.msgq.put(("log", m)),
-                    progress_cb=lambda p, t, pct: self.msgq.put(("progress", pct * 100.0)),
+                    progress_cb=None,
                     cancel_event=self.cancel_event,
                 )
                 self.msgq.put(("single_done", out_png))
@@ -11868,8 +11628,8 @@ class App(tk.Tk):
         self.cancel_event.clear()
         self.current_task = "debug"
         self.stop_control["mode"] = "immediate"
+        self._clear_progress_vars()
         self._set_busy(True)
-        self._set_progress(0.0)
         self._set_status("Debugging…", "Rendering one chunk PNG + debug IDs.")
         self._log(f"Debug archive: {zip_path}", "timelapse")
 
@@ -11899,8 +11659,8 @@ class App(tk.Tk):
         self.cancel_event.clear()
         self.current_task = "preflight"
         self.stop_control["mode"] = "immediate"
+        self._clear_progress_vars()
         self._set_busy(True)
-        self._set_progress(0.0)
         self._set_status("Running preflight report…", "Collecting input and cache diagnostics.")
         self._log("-" * 60, "timelapse")
         self._log("Preflight: no rendering will be performed.", "timelapse")
@@ -11927,8 +11687,22 @@ class App(tk.Tk):
                 elif kind == "status":
                     a, b = payload
                     self._set_status(a, b)
-                elif kind == "progress":
-                    self._set_progress(payload)
+                elif kind == "progress_update":
+                    completed = int(payload.get("completed", 0))
+                    in_progress = int(payload.get("in_progress", 0))
+                    total = int(payload.get("total", 0))
+                    eta_str = str(payload.get("eta_str", ""))
+                    active_chunk_progress = float(payload.get("active_chunk_progress", 0.0))
+
+                    if total > 0:
+                        self.frames_completed_var.set(f"Completed frames: {completed}")
+                        self.frames_progress_var.set(f"Frames in progress: {in_progress}")
+                        self.frames_total_var.set(f"Total frames: {total}")
+                        self.eta_var.set(eta_str)
+                        if hasattr(self, "progress_bar"):
+                            self.progress_bar.set_progress(completed, in_progress, total, active_chunk_progress)
+                    else:
+                        self._clear_progress_vars()
                 elif kind == "auto_crop_result":
                     line1, line2 = payload
                     text = normalize_log_text(str(line1))
