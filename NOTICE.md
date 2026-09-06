@@ -1,7 +1,7 @@
 # Notices & Third-Party Licenses
 
 This project uses the following third-party open-source packages.
-All are compatible with WMTT4MC's dual non-commercial / commercial license.
+All are compatible with TM4MC's dual non-commercial / commercial license.
 
 ---
 

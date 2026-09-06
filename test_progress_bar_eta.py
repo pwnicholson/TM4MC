@@ -6,8 +6,8 @@ import sys
 import unittest
 from dataclasses import dataclass
 
-# Import wmtt4mc module
-import wmtt4mc
+# Import tm4mc module
+import tm4mc
 
 
 class TestProgressBarETA(unittest.TestCase):
@@ -21,7 +21,7 @@ class TestProgressBarETA(unittest.TestCase):
         except tk.TclError:
             self.skipTest("Tkinter GUI display not available")
 
-        bar = wmtt4mc.CanvasProgressBar(root)
+        bar = tm4mc.CanvasProgressBar(root)
         bar.set_progress(completed=3, in_progress=2, total=10, active_chunk_progress=0.5)
         self.assertEqual(bar._completed, 3)
         self.assertEqual(bar._in_progress, 2)
@@ -38,7 +38,7 @@ class TestProgressBarETA(unittest.TestCase):
         except tk.TclError:
             self.skipTest("Tkinter GUI display not available")
 
-        bar = wmtt4mc.CanvasProgressBar(root)
+        bar = tm4mc.CanvasProgressBar(root)
         bar.set_progress(completed=150, in_progress=4, total=268, active_chunk_progress=0.3)
         self.assertEqual(bar._completed, 150)
         self.assertEqual(bar._in_progress, 4)

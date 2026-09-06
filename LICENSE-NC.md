@@ -1,8 +1,8 @@
-# WMTT4MC Non-Commercial Public License (NCPL) v1.0
+# TM4MC Non-Commercial Public License (NCPL) v1.0
 
 Copyright (c) 2026 Paul Nicholson
 
-This license governs use of the software known as **World Map Timeline Tool for Minecraft (WMTT4MC)**, including its source code, documentation, and associated materials (the “Software”), except where a separate commercial license has been granted in writing by the Licensor.
+This license governs use of the software known as **Timeline Maps for Minecraft (TM4MC)**, including its source code, documentation, and associated materials (the “Software”), except where a separate commercial license has been granted in writing by the Licensor.
 
 ## 1. Definitions
 
@@ -73,4 +73,4 @@ Commercial Use requires a separate Commercial License from the Licensor. See COM
 This license will be governed by the laws applicable where the Licensor resides, excluding conflict of law principles, unless otherwise agreed in writing.
 
 ---
-NCPL v1.0 — World Map Timeline Tool for Minecraft (WMTT4MC)
+NCPL v1.0 — Timeline Maps for Minecraft (TM4MC)

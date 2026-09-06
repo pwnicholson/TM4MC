@@ -10,7 +10,7 @@
   },
   "files": {
     "files": {
-      "wmtt4mc.py": {
+      "tm4mc.py": {
         "exists": true,
         "size": 512569,
         "description": "Main application"

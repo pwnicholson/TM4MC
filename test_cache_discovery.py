@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Regression tests for WMTT4MC cache discovery and matching logic.
+Regression tests for TM4MC cache discovery and matching logic.
 
 Tests cover:
 - Cache file discovery
@@ -19,7 +19,7 @@ import pytest
 from pathlib import Path
 
 # Import the functions to test
-from wmtt4mc_cache import (
+from tm4mc_cache import (
     is_cache_file,
     is_world_folder,
     snapshot_stem,

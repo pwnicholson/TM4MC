@@ -1,10 +1,10 @@
-# Commercial Licensing for WMTT4MC
+# Commercial Licensing for TM4MC
 
-WMTT4MC is available under a **Non-Commercial Public License** for personal/community use.
-If you want to use WMTT4MC (or a fork/derivative) in a way tied to revenue, you need a **Commercial License**.
+TM4MC is available under a **Non-Commercial Public License** for personal/community use.
+If you want to use TM4MC (or a fork/derivative) in a way tied to revenue, you need a **Commercial License**.
 
 ## Examples that REQUIRE a Commercial License
-- Using WMTT4MC as part of a paid Minecraft server operation (or any paid service) where WMTT4MC is used to support or enhance that revenue-linked offering.
+- Using TM4MC as part of a paid Minecraft server operation (or any paid service) where TM4MC is used to support or enhance that revenue-linked offering.
 - Selling the software, charging for access to it, or charging others to use it.
 - Bundling it into a paid product, paid integration, or paid tool suite.
 - Distributing it via an ad-supported bundle/launcher/installer, or otherwise monetizing distribution via ads.
@@ -21,7 +21,7 @@ Contact: Paul Nicholson
 
 When you reach out, include:
 - your name/organization,
-- how you want to use WMTT4MC,
+- how you want to use TM4MC,
 - whether you need distribution rights (binaries, bundling),
 - expected user count and the context (server, product, integration, etc.).
 

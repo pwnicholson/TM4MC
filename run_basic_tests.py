@@ -8,7 +8,7 @@ from pathlib import Path
 
 # Test imports
 try:
-    from wmtt4mc_cache import (
+    from tm4mc_cache import (
         is_cache_file,
         is_world_folder,
         snapshot_stem,

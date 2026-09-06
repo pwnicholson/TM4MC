@@ -1,9 +1,9 @@
-# Trademark & Branding Policy (WMTT4MC)
+# Trademark & Branding Policy (TM4MC)
 
 ## Project Names
 The following are used to identify the official project:
-- “World Map Timeline Tool for Minecraft”
-- “WMTT4MC”
+- “Timeline Maps for Minecraft”
+- “TM4MC”
 - Associated logos/icons used in this repository (the “Branding”)
 
 ## Official Builds
@@ -16,10 +16,10 @@ Forks are welcome under the applicable license terms, but you must follow these 
 You must not suggest your fork is official or endorsed by Paul Nicholson, Mojang, or Microsoft.
 
 2) **Use a distinct name**
-If you distribute a fork publicly (especially binaries), you must use a name that clearly distinguishes it from WMTT4MC (e.g., “<YourName> World Map Timeline Fork”).
+If you distribute a fork publicly (especially binaries), you must use a name that clearly distinguishes it from TM4MC (e.g., “<YourName> Timeline Maps Fork”).
 
 3) **Permitted references**
-You may say: “Forked from WMTT4MC” and link to the official repo.
+You may say: “Forked from TM4MC” and link to the official repo.
 
 4) **No use of official logos**
 Do not use the official logo/icon/branding in a way that suggests your fork is the official project.

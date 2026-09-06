@@ -32,7 +32,7 @@ def check_python_environment():
     }
 
 def main():
-    print('🚀 Starting WMTT4MC Development Environment Check...')
+    print('🚀 Starting TM4MC Development Environment Check...')
     env = check_python_environment()
     print('Python version:', env['python_version'])
     print('Platform:', env['platform'])

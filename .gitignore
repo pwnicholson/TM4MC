@@ -200,8 +200,8 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 
 # Local runtime state
-wmtt4mc_settings.json
-.wmtt4mc_build_state.json
+tm4mc_settings.json
+.tm4mc_build_state.json
 .cursorignore
 .cursorindexingignore
 

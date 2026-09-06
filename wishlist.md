@@ -1,4 +1,4 @@
-﻿# World Map Timeline Tool for Minecraft (WMTT4MC) — Wishlist
+﻿# Timeline Maps for Minecraft (TM4MC) — Wishlist
 
 A backlog of ideas to revisit after core stability and correctness are solid.
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Simple WMTT4MC Development Check
+Simple TM4MC Development Check
 """
 
 import os
@@ -42,7 +42,7 @@ def check_required_files():
     print("\n🔍 Checking Required Files...")
     
     required_files = {
-        "wmtt4mc.py": "Main application",
+        "tm4mc.py": "Main application",
         "palette.json": "Block color palette", 
         "requirements.txt": "Python dependencies"
     }
@@ -206,28 +206,28 @@ def check_importability():
         sys.path.insert(0, str(current_dir))
         
         # Try to import the main module
-        import wmtt4mc
+        import tm4mc
         
         print(f"   ✓ Module imported successfully")
-        print(f"   ✓ Version: {wmtt4mc.APP_VERSION}")
-        print(f"   ✓ Build: {wmtt4mc.APP_BUILD}")
+        print(f"   ✓ Version: {tm4mc.APP_VERSION}")
+        print(f"   ✓ Build: {tm4mc.APP_BUILD}")
         
         # Test key components
         try:
             # Test palette loading
             palette_path = Path("palette.json")
             if palette_path.exists():
-                wmtt4mc.apply_palette_overrides(str(palette_path))
+                tm4mc.apply_palette_overrides(str(palette_path))
                 print("   ✓ Palette loading works")
             
             # Test basic block classification
-            rgb, key, known, reason = wmtt4mc.classify_block("minecraft:grass_block")
+            rgb, key, known, reason = tm4mc.classify_block("minecraft:grass_block")
             print(f"   ✓ Block classification works - grass_block -> RGB:{rgb}, known:{known}")
             
             return {
                 "status": "success",
-                "version": wmtt4mc.APP_VERSION,
-                "build": wmtt4mc.APP_BUILD,
+                "version": tm4mc.APP_VERSION,
+                "build": tm4mc.APP_BUILD,
                 "issues": [],
                 "recommendations": []
             }
@@ -236,8 +236,8 @@ def check_importability():
             print(f"   ⚠️  Component test failed: {e}")
             return {
                 "status": "partial_success",
-                "version": wmtt4mc.APP_VERSION,
-                "build": wmtt4mc.APP_BUILD,
+                "version": tm4mc.APP_VERSION,
+                "build": tm4mc.APP_BUILD,
                 "issues": [f"⚠️  Component test failed: {e}"],
                 "recommendations": ["Check component dependencies and functionality"]
             }
@@ -254,7 +254,7 @@ def check_importability():
 def generate_report(results):
     """Generate a comprehensive report"""
     print("\n" + "="*60)
-    print("📋 WMTT4MC DEVELOPMENT ENVIRONMENT REPORT")
+    print("📋 TM4MC DEVELOPMENT ENVIRONMENT REPORT")
     print("="*60)
     
     # Environment summary
@@ -340,7 +340,7 @@ def generate_report(results):
 
 def main():
     """Run the complete development check"""
-    print("🚀 Starting WMTT4MC Development Environment Check...")
+    print("🚀 Starting TM4MC Development Environment Check...")
     
     results = {}
     

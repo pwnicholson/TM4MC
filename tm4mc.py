@@ -34,7 +34,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import queue
 
-from wmtt4mc_cache import (
+from tm4mc_cache import (
     CACHE_MODE_ALL_BLOCKS,
     CACHE_MODE_NONE,
     CACHE_MODE_SURFACE,
@@ -148,7 +148,7 @@ def _raw_block_id(block: Any) -> str:
 
 
 def _config_path() -> str:
-    return os.path.join(_app_dir(), "wmtt4mc_settings.json")
+    return os.path.join(_app_dir(), "tm4mc_settings.json")
 
 
 def _load_config(path: Optional[str] = None) -> dict:
@@ -444,7 +444,7 @@ def _pal_normalize_obj(obj: Dict[str, Any]) -> Dict[str, _PalRGB]:
 
 
 def _pal_load_file(path: str) -> Tuple[Dict[str, Any], Dict[str, _PalRGB], set]:
-    """Load palette.json.  Supports WMTT4MC rgb_overrides schema and legacy flat dicts."""
+    """Load palette.json.  Supports TM4MC rgb_overrides schema and legacy flat dicts."""
     with open(path, "r", encoding="utf-8") as f:
         raw = json.load(f)
     if not isinstance(raw, dict):
@@ -1160,12 +1160,12 @@ def _atomic_save_png(img, out_path: str, log=None, max_tries: int = 8) -> None:
 # App identity (versioning)
 # =============================================================================
 
-APP_NAME = "World Map Timeline Tool for Minecraft"
+APP_NAME = "Timeline Maps for Minecraft"
 
 def _build_state_file_path() -> str:
     """Prefer app directory; fall back to LOCALAPPDATA when not writable."""
     base_dir = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else os.path.dirname(os.path.abspath(__file__))
-    primary = os.path.join(base_dir, ".wmtt4mc_build_state.json")
+    primary = os.path.join(base_dir, ".tm4mc_build_state.json")
     try:
         os.makedirs(base_dir, exist_ok=True)
         with open(primary + ".tmp", "w", encoding="utf-8") as f:
@@ -1174,12 +1174,12 @@ def _build_state_file_path() -> str:
         return primary
     except Exception:
         local = os.getenv("LOCALAPPDATA") or os.path.expanduser("~")
-        fallback_dir = os.path.join(local, "WMTT4MC")
+        fallback_dir = os.path.join(local, "TM4MC")
         try:
             os.makedirs(fallback_dir, exist_ok=True)
         except Exception:
             pass
-        return os.path.join(fallback_dir, ".wmtt4mc_build_state.json")
+        return os.path.join(fallback_dir, ".tm4mc_build_state.json")
 
 
 def _source_fingerprint() -> str:
@@ -1256,7 +1256,7 @@ def _get_next_build_number() -> str:
     except Exception:
         prev_build = 0
 
-    force_bump = str(os.getenv("WMTT4MC_FORCE_BUILD_BUMP", "")).strip().lower() in {"1", "true", "yes", "y"}
+    force_bump = str(os.getenv("TM4MC_FORCE_BUILD_BUMP", "")).strip().lower() in {"1", "true", "yes", "y"}
 
     if prev_date != today:
         build_num = 1
@@ -1276,9 +1276,9 @@ def _get_next_build_number() -> str:
     return f"{today}.{build_num:02d}"
 
 APP_VERSION = "1.7.1"
-# Build number increments per code change (and can be force-bumped with WMTT4MC_FORCE_BUILD_BUMP=1).
+# Build number increments per code change (and can be force-bumped with TM4MC_FORCE_BUILD_BUMP=1).
 APP_BUILD = _get_next_build_number()
-APP_ABBR = "WMTT4MC"
+APP_ABBR = "TM4MC"
 DISCLAIMER_TEXT = "NOT AN OFFICIAL MINECRAFT PRODUCT. Not affiliated with or endorsed by Mojang or Microsoft."
 
 
@@ -3983,7 +3983,7 @@ def snapshot_loaded_chunk_coords(
     if amulet is None or not hasattr(amulet, "load_level"):
         raise RuntimeError("Amulet API unavailable. Cannot auto-crop from raw backups.")
 
-    tmpdir = tempfile.mkdtemp(prefix="wmtt4mc_autocrop_")
+    tmpdir = tempfile.mkdtemp(prefix="tm4mc_autocrop_")
     world0 = None
     try:
         _tmp_root, candidates = _resolve_snapshot_world_roots(source_path, tmpdir)
@@ -4701,7 +4701,7 @@ def build_snapshot_cache(
 
     cache_path = sidecar_cache_path(source_path, dimension, cache_mode)
     world0 = None
-    tmpdir = tempfile.mkdtemp(prefix="wmtt4mc_cache_")
+    tmpdir = tempfile.mkdtemp(prefix="tm4mc_cache_")
 
     try:
         t0_total = time.time()
@@ -8595,7 +8595,7 @@ class App(tk.Tk):
 
         # --- Timelapse tab vars ---
         self.folder_var = tk.StringVar()
-        self.out_var = tk.StringVar(value=os.path.join(os.path.expanduser("~"), "WMTT4MC_Output"))
+        self.out_var = tk.StringVar(value=os.path.join(os.path.expanduser("~"), "TM4MC_Output"))
         self.dimension_var = tk.StringVar(value="Overworld")
 
         # Crop/limit (must be initialized before use)
@@ -8648,7 +8648,7 @@ class App(tk.Tk):
 
         # --- Single-map tab vars ---
         self.single_zip_var = tk.StringVar()
-        self.single_out_png_var = tk.StringVar(value=os.path.join(os.path.expanduser("~"), "wmtt4mc_map.png"))
+        self.single_out_png_var = tk.StringVar(value=os.path.join(os.path.expanduser("~"), "tm4mc_map.png"))
         self.single_dimension_var = tk.StringVar(value="minecraft:overworld")
         self.single_target_var = tk.StringVar(value="Original (no scaling)")
         self.single_custom_w_var = tk.IntVar(value=3840)
@@ -9013,7 +9013,7 @@ class App(tk.Tk):
 
         ttk.Label(outopts, text="GIF name (optional):").grid(row=0, column=0, sticky="w", **pad)
         ttk.Entry(outopts, textvariable=self.output_name_var, width=40).grid(row=0, column=1, sticky="w", **pad)
-        ttk.Label(outopts, text='(blank = auto: "WorldName_wmtt4mc.gif")').grid(row=0, column=2, sticky="w", **pad)
+        ttk.Label(outopts, text='(blank = auto: "WorldName_tm4mc.gif")').grid(row=0, column=2, sticky="w", **pad)
 
         ttk.Checkbutton(outopts, text="Keep frame PNGs after GIF is created", variable=self.keep_frames_var).grid(row=1, column=0, columnspan=3, sticky="w", **pad)
         ttk.Label(outopts, text="Output cache mode:").grid(row=2, column=0, sticky="w", **pad)
@@ -10170,10 +10170,10 @@ class App(tk.Tk):
         def li(text: str) -> None:
             i("end", "  \u2022  " + text + "\n", "li")
 
-        i("end", f"WMTT4MC  v{APP_VERSION}  \u2014  World Map Timeline Tool for Minecraft\n", "h1")
+        i("end", f"TM4MC  v{APP_VERSION}  \u2014  Timeline Maps for Minecraft\n", "h1")
         i("end", "\n")
         i("end",
-          "WMTT4MC reads Minecraft world backups and renders top-down map images,\n"
+          "TM4MC reads Minecraft world backups and renders top-down map images,\n"
           "then assembles them into an animated GIF timelapse showing how your world\n"
           "has changed over time.\n\n", "body")
 
@@ -10198,7 +10198,7 @@ class App(tk.Tk):
           "\u2014 much faster to render from on repeated runs.\n\n", "body")
         i("end", "How caches work:\n", "body")
         li("Click \u201cBuild / update caches\u201d to generate .wmtt4mc files next to each backup.")
-        li("On the next render, WMTT4MC uses the cache instead of re-scanning the ZIP.")
+        li("On the next render, TM4MC uses the cache instead of re-scanning the ZIP.")
         li("Once cached, you can delete the original ZIP to reclaim disk space.")
         li("If the backup content changes, the cache is flagged as mismatched and\n"
            "      you are prompted to decide what to do.")
@@ -10262,12 +10262,12 @@ class App(tk.Tk):
         sec("Palette Editor")
         i("end",
           "The Palette Editor tab lets you control which colour is used for each block\n"
-          "when rendering.  WMTT4MC ships with a built-in palette of over 1 100 block\n"
+          "when rendering.  TM4MC ships with a built-in palette of over 1 100 block\n"
           "colours derived from Java Edition texture averages.\n\n", "body")
 
         i("end", "How palette lookup works during a render\n", "h2")
         i("end",
-          "  For each block WMTT4MC encounters, colours are resolved in this order:\n\n", "body")
+          "  For each block TM4MC encounters, colours are resolved in this order:\n\n", "body")
         i("end", "  1. ", "body")
         i("end", "Editor palette", "code")
         i("end",
@@ -11653,7 +11653,7 @@ class App(tk.Tk):
         else:
             zip_path = default_zip
 
-        out_dir = self.out_var.get().strip() or os.path.join(os.path.expanduser("~"), "WMTT4MC_Output")
+        out_dir = self.out_var.get().strip() or os.path.join(os.path.expanduser("~"), "TM4MC_Output")
         os.makedirs(out_dir, exist_ok=True)
 
         opt = self._gather_options()

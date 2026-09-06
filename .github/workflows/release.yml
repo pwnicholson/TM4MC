@@ -34,25 +34,25 @@ jobs:
 
       - name: Build one-file executable with PyInstaller
         run: |
-          pyinstaller --noconfirm --clean --windowed --onefile --name WMTT4MC wmtt4mc.py
+          pyinstaller --noconfirm --clean --windowed --onefile --name TM4MC tm4mc.py
         shell: bash
 
       - name: Package artifact (Windows)
         if: runner.os == 'Windows'
         run: |
-          powershell -Command "Compress-Archive -Path dist\\WMTT4MC.exe -DestinationPath WMTT4MC-windows.zip"
+          powershell -Command "Compress-Archive -Path dist\\TM4MC.exe -DestinationPath TM4MC-windows.zip"
 
       - name: Package artifact (macOS)
         if: runner.os == 'macOS'
         run: |
           cd dist
-          # PyInstaller produces an executable named WMTT4MC (no .exe) on macOS
-          ditto -c -k --sequesterRsrc --keepParent WMTT4MC ../WMTT4MC-macos.zip
+          # PyInstaller produces an executable named TM4MC (no .exe) on macOS
+          ditto -c -k --sequesterRsrc --keepParent TM4MC ../TM4MC-macos.zip
 
       - name: Upload Release Assets
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            WMTT4MC-windows.zip
-            WMTT4MC-macos.zip
+            TM4MC-windows.zip
+            TM4MC-macos.zip
 

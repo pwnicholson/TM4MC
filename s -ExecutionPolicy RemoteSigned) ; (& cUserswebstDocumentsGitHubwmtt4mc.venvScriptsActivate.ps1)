@@ -13,9 +13,9 @@ Date:   Tue May 5 09:40:24 2026 -0500
     - Separate 'Cache Creation Progress' from 'Rendering Progress' with own ETA counters
     - Add CHANGELOG documenting recent fixes and improvements
 
-[1mdiff --git a/wmtt4mc.py b/wmtt4mc.py[m
-[1m--- a/wmtt4mc.py[m
-[1m+++ b/wmtt4mc.py[m
+[1mdiff --git a/tm4mc.py b/tm4mc.py[m
+[1m--- a/tm4mc.py[m
+[1m+++ b/tm4mc.py[m
 [36m@@ -5024,5 +6029,58 @@[m
 [32m+                    else:[m
 [32m+                        retry_opt.workers = max(1, int(opt.workers))[m
@@ -99,9 +99,9 @@ Date:   Sat Apr 11 14:52:28 2026 -0500
     - Help tab: full Palette Editor section covering lookup priority, workflow,
       texture pack import, merge/conflict, transparent blocks, and save procedure
 
-[1mdiff --git a/wmtt4mc.py b/wmtt4mc.py[m
-[1m--- a/wmtt4mc.py[m
-[1m+++ b/wmtt4mc.py[m
+[1mdiff --git a/tm4mc.py b/tm4mc.py[m
+[1m--- a/tm4mc.py[m
+[1m+++ b/tm4mc.py[m
 [36m@@ -1947,9 +5024,5 @@[m
 [31m-        skipped_report = None[m
 [31m-        if skipped:[m

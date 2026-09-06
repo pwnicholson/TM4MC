@@ -2,7 +2,7 @@ import tempfile
 from collections import Counter
 import types
 
-import wmtt4mc
+import tm4mc
 
 
 def _block(namespaced_name, properties=None):
@@ -11,10 +11,10 @@ def _block(namespaced_name, properties=None):
 
 
 def test_reason_needs_real_palette_entry():
-    assert wmtt4mc._reason_needs_real_palette_entry("variant", True) is False
-    assert wmtt4mc._reason_needs_real_palette_entry("wiki_base_color", True) is False
-    assert wmtt4mc._reason_needs_real_palette_entry("generic_palette_fallback", True) is False
-    assert wmtt4mc._reason_needs_real_palette_entry("unknown", False) is True
+    assert tm4mc._reason_needs_real_palette_entry("variant", True) is False
+    assert tm4mc._reason_needs_real_palette_entry("wiki_base_color", True) is False
+    assert tm4mc._reason_needs_real_palette_entry("generic_palette_fallback", True) is False
+    assert tm4mc._reason_needs_real_palette_entry("unknown", False) is True
 
 
 def test_wiki_base_colors_for_common_blocks():
@@ -37,7 +37,7 @@ def test_wiki_base_colors_for_common_blocks():
     ]
 
     for block_id, expected in cases:
-        rgb, _, known, _ = wmtt4mc.classify_block(_block(block_id))
+        rgb, _, known, _ = tm4mc.classify_block(_block(block_id))
         assert rgb == expected, f"{block_id} should map to {expected}, got {rgb}"
         assert known is True
 
@@ -51,7 +51,7 @@ def test_plant_variant_palette_mapping():
         ("universal_minecraft:plant[plant_type='allium']", (175, 90, 190)),
     ]
     for raw, expected in plants:
-        rgb, _, known, reason = wmtt4mc.classify_block(raw)
+        rgb, _, known, reason = tm4mc.classify_block(raw)
         assert rgb == expected
         assert known is True
         assert reason == 'variant'
@@ -64,7 +64,7 @@ def test_banner_color_mapping():
         ("universal_minecraft:banner[color='black',rotation='3']", (30, 30, 30)),
     ]
     for raw, expected in banners:
-        rgb, _, known, reason = wmtt4mc.classify_block(raw)
+        rgb, _, known, reason = tm4mc.classify_block(raw)
         assert rgb == expected
         assert known is True
         assert reason in ('palette', 'generic_palette_fallback')
@@ -77,14 +77,14 @@ def test_material_specific_stairs_and_slabs_map_to_palette_variants():
         ("universal_minecraft:stairs[facing='south',half='bottom',material='stone_brick',shape='straight']", (112, 112, 112)),
     ]
     for raw, expected in cases:
-        rgb, _, known, reason = wmtt4mc.classify_block(raw)
+        rgb, _, known, reason = tm4mc.classify_block(raw)
         assert rgb == expected, f"{raw} should map to {expected}, got {rgb}"
         assert known is True
         assert reason in ('palette', 'generic_palette_fallback', 'variant')
 
 
 def test_pink_petals_direct_ids_use_known_palette_color():
-    rgb, _, known, reason = wmtt4mc.classify_block(_block("minecraft:pink_petals"))
+    rgb, _, known, reason = tm4mc.classify_block(_block("minecraft:pink_petals"))
     assert rgb == (242, 127, 165)
     assert known is True
     assert reason in ('palette', 'variant', 'wiki_base_color', 'generic_palette_fallback')
@@ -97,7 +97,7 @@ def test_stair_and_slab_ids_do_not_match_air_token():
         ("minecraft:stairs", (140, 130, 120)),
     ]
     for block_id, expected in cases:
-        rgb, _, known, reason = wmtt4mc.classify_block(_block(block_id))
+        rgb, _, known, reason = tm4mc.classify_block(_block(block_id))
         assert rgb == expected, f"{block_id} should map to {expected}, got {rgb}"
         assert known is True
         assert reason in ('palette', 'generic_palette_fallback', 'wiki_base_color')
@@ -112,7 +112,7 @@ def test_quartz_and_wool_stairs_and_slabs_have_palette_entries():
         ("minecraft:black_wool_stairs", (30, 30, 30)),
     ]
     for block_id, expected in cases:
-        rgb, _, known, reason = wmtt4mc.classify_block(_block(block_id))
+        rgb, _, known, reason = tm4mc.classify_block(_block(block_id))
         assert rgb == expected, f"{block_id} should map to {expected}, got {rgb}"
         assert known is True
         assert reason in ('palette', 'generic_palette_fallback')
@@ -128,7 +128,7 @@ def test_wall_variants_and_nether_blocks_have_expected_palette_colors():
         ("minecraft:stone_brick_wall", (112, 112, 112)),
     ]
     for block_id, expected in wall_cases:
-        rgb, _, known, reason = wmtt4mc.classify_block(_block(block_id))
+        rgb, _, known, reason = tm4mc.classify_block(_block(block_id))
         assert rgb == expected, f"{block_id} should map to {expected}, got {rgb}"
         assert known is True
         assert reason in ('palette', 'generic_palette_fallback')
@@ -139,7 +139,7 @@ def test_wall_variants_and_nether_blocks_have_expected_palette_colors():
         ("minecraft:red_nether_bricks", (112, 2, 0)),
     ]
     for block_id, expected in nether_cases:
-        rgb, _, known, reason = wmtt4mc.classify_block(_block(block_id))
+        rgb, _, known, reason = tm4mc.classify_block(_block(block_id))
         assert rgb == expected, f"{block_id} should map to {expected}, got {rgb}"
         assert known is True
         assert reason in ('palette', 'wiki_base_color', 'generic_palette_fallback')
@@ -152,7 +152,7 @@ def test_sulfur_and_cinnabar_palette_entries():
         ("minecraft:polished_cinnabar_wall[wall_connection_type_east='short',wall_connection_type_north='short',wall_connection_type_south='short',wall_connection_type_west='none',wall_post_bit='1']", (190, 55, 55)),
     ]
     for raw, expected in cases:
-        rgb, _, known, reason = wmtt4mc.classify_block(raw)
+        rgb, _, known, reason = tm4mc.classify_block(raw)
         assert rgb == expected
         assert known is True
         assert reason in ('palette', 'generic_palette_fallback')
@@ -160,7 +160,7 @@ def test_sulfur_and_cinnabar_palette_entries():
 
 def test_cherry_leaves_variant_properties():
     block = _block("minecraft:leaves", {"leaves": "cherry"})
-    rgb, _, known, reason = wmtt4mc.classify_block(block)
+    rgb, _, known, reason = tm4mc.classify_block(block)
     assert rgb == (242, 127, 165)
     assert known is True
     assert reason == "variant"
@@ -174,7 +174,7 @@ def test_run_raw_ids_log_includes_color():
     with tempfile.TemporaryDirectory() as tmpdir:
         out_png = os.path.join(tmpdir, "frame.png")
         log_path = os.path.join(tmpdir, "run_raw_ids.log")
-        wmtt4mc._append_unique_raw_ids_to_runlog(out_png, raw_counts)
+        tm4mc._append_unique_raw_ids_to_runlog(out_png, raw_counts)
         with open(log_path, "r", encoding="utf-8") as f:
             lines = [ln.strip() for ln in f if ln.strip()]
         assert any("dandelion" in ln and "rgb(" in ln and "#" in ln for ln in lines)

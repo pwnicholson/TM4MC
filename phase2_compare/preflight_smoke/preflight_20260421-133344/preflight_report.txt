@@ -1,4 +1,4 @@
-World Map Timeline Tool for Minecraft v1.6.0 (build 2026.04.21.06)
+Timeline Maps for Minecraft v1.6.0 (build 2026.04.21.06)
 Preflight folder: c:\Users\webst\Documents\GitHub\wmtt4mc\phase2_compare\preflight_smoke\preflight_20260421-133344
 Input folder: F:/Development/WMTTT4MC-Master/Season Eight SAMPLE
 Output folder: c:\Users\webst\Documents\GitHub\wmtt4mc\phase2_compare\preflight_smoke
