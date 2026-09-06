@@ -2973,21 +2973,24 @@ def ensure_palette_json(palette_path: str) -> None:
         if path.exists():
             return
 
+        bundled_dir = getattr(sys, "_MEIPASS", "")
+        seed_candidates = [
+            Path(bundled_dir) / "palette.json" if bundled_dir else None,
+            Path(__file__).resolve().with_name("palette.json"),
+        ]
+        for seed_path in seed_candidates:
+            if seed_path and seed_path.is_file() and seed_path.resolve() != path.resolve():
+                path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(seed_path, path)
+                return
+
         bundle = {
             "schema_version": 1,
-            "palette": PALETTE,
-            "variant_palette": VARIANT_PALETTE,
-            "plant_type_palette": PLANT_TYPE_PALETTE,
-            "color_palette": COLOR_PALETTE,
-            "wood_material_palette": WOOD_MATERIAL_PALETTE,
-            "wool_color_palette": WOOL_COLOR_PALETTE,
-            "terracotta_color_palette": TERRACOTTA_COLOR_PALETTE,
-            "concrete_color_palette": CONCRETE_COLOR_PALETTE,
-            "concrete_powder_color_palette": CONCRETE_POWDER_COLOR_PALETTE,
-            "carpet_color_palette": CARPET_COLOR_PALETTE,
-            "stained_glass_color_palette": STAINED_GLASS_COLOR_PALETTE,
-            "stained_glass_pane_color_palette": STAINED_GLASS_PANE_COLOR_PALETTE,
+            "rgb_overrides": {
+                key: list(rgb) for key, rgb in sorted(PALETTE.items())
+            },
         }
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(bundle, indent=2, sort_keys=True), encoding="utf-8")
     except Exception:
         # Non-fatal (read-only folder, bundled app, etc.)
@@ -8688,21 +8691,38 @@ class App(tk.Tk):
     def _set_window_icon(self):
         """Set window/taskbar icon if assets are present."""
         try:
-            base_dir = os.path.dirname(os.path.abspath(__file__))
-            ico_path = os.path.join(base_dir, "app_icon.ico")
-            png_path = os.path.join(base_dir, "app_icon_1024.png")
-            try:
-                if os.path.exists(ico_path):
-                    self.iconbitmap(ico_path)
-            except Exception:
-                pass
-            try:
-                if os.path.exists(png_path):
-                    img = tk.PhotoImage(file=png_path)
-                    self.iconphoto(True, img)
-                    self._icon_img = img  # keep ref
-            except Exception:
-                pass
+            resource_dirs = []
+            for resource_dir in (
+                getattr(sys, "_MEIPASS", None),
+                os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else None,
+                os.path.dirname(os.path.abspath(__file__)),
+            ):
+                if resource_dir and resource_dir not in resource_dirs:
+                    resource_dirs.append(resource_dir)
+
+            icon_set = False
+            for resource_dir in resource_dirs:
+                ico_path = os.path.join(resource_dir, "app_icon.ico")
+                if not os.path.isfile(ico_path):
+                    continue
+                try:
+                    self.iconbitmap(default=ico_path)
+                    icon_set = True
+                    break
+                except Exception:
+                    continue
+
+            if not icon_set:
+                for resource_dir in resource_dirs:
+                    png_path = os.path.join(resource_dir, "app_icon_1024.png")
+                    if not os.path.isfile(png_path):
+                        continue
+                    try:
+                        self._icon_img = tk.PhotoImage(file=png_path)
+                        self.iconphoto(True, self._icon_img)
+                        break
+                    except Exception:
+                        continue
         except Exception:
             pass
 

@@ -5,6 +5,7 @@ A backlog of ideas to revisit after core stability and correctness are solid.
 ## Problems to fix
 - Takes a long time to stop a job and close the app in the middle of a job
 - ETA is still unreliable or takes a long time to calculate.
+- Progress indicators don't show progress (go from 0% to 100% instantly)
 
 ## Palette / Rendering problems
 - Fix missing blocks and wrong-color issues by aligning with Minecraft in-game map color process as defined in the wiki (https://minecraft.wiki/w/Map_item_format)
@@ -12,6 +13,7 @@ A backlog of ideas to revisit after core stability and correctness are solid.
 
 ## Rendering speed & efficiency
 - For a cache refresh/create mode, have it check hashes of the world backup to make sure the world file hasn't changed, then skip that file for cache creation, moving on to look for files that have either updated (hashes don't match) or are new with no caches
+- Render in serial with max CPU capability when rendering from caches. Only run parallel scan/renders when working from original world backups (zips or folders) that are limited by amulet
 - Recovery from interrupted cache process
 - Option to Enable Progressive outputs: generate an animated GIF as soon as 2 frames exist, then update/overwrite the GIF each time a new frame completes (so partial results are viewable if a run is cancelled).
 
