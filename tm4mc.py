@@ -194,10 +194,11 @@ class ScrollableFrame(ttk.Frame):
         self.interior.bind("<Configure>", self._on_interior_configure)
         self.canvas.bind("<Configure>", self._on_canvas_configure)
 
-        self.canvas.bind("<Enter>", self._bind_mousewheel)
-        self.canvas.bind("<Leave>", self._unbind_mousewheel)
-        self.interior.bind("<Enter>", self._bind_mousewheel)
-        self.interior.bind("<Leave>", self._unbind_mousewheel)
+        # Keep the binding active while this frame exists. Child widgets do
+        # not consistently propagate wheel events to the canvas.
+        self.bind_all("<MouseWheel>", self._on_mousewheel, add="+")
+        self.bind_all("<Button-4>", self._on_mousewheel, add="+")
+        self.bind_all("<Button-5>", self._on_mousewheel, add="+")
 
     def _on_interior_configure(self, _event=None):
         self.canvas.configure(scrollregion=self.canvas.bbox("all"))
@@ -205,17 +206,20 @@ class ScrollableFrame(ttk.Frame):
     def _on_canvas_configure(self, event):
         self.canvas.itemconfigure(self._window_id, width=event.width)
 
-    def _bind_mousewheel(self, _event=None):
-        self.canvas.bind_all("<MouseWheel>", self._on_mousewheel)
-        self.canvas.bind_all("<Button-4>", self._on_mousewheel)
-        self.canvas.bind_all("<Button-5>", self._on_mousewheel)
-
-    def _unbind_mousewheel(self, _event=None):
-        self.canvas.unbind_all("<MouseWheel>")
-        self.canvas.unbind_all("<Button-4>")
-        self.canvas.unbind_all("<Button-5>")
-
     def _on_mousewheel(self, event):
+        widget = getattr(event, "widget", None)
+        inside_frame = False
+        while widget is not None:
+            if widget == self:
+                inside_frame = True
+                break
+            try:
+                widget = widget.nametowidget(widget.winfo_parent())
+            except (tk.TclError, AttributeError):
+                widget = None
+        if not inside_frame:
+            return
+
         if getattr(event, "delta", 0):
             step = -1 if event.delta > 0 else 1
         elif getattr(event, "num", 0) == 4:
@@ -2753,6 +2757,9 @@ def _apply_explicit_palette_colors(palette: Dict[str, Tuple[int, int, int]]) -> 
         palette[_key] = _rgb
     for _key, _rgb in NETHER_VARIANT_COLORS.items():
         palette[_key] = _rgb
+    palette["minecraft:yellow_banner"] = (249, 198, 40)
+    palette["minecraft:white_banner"] = (235, 235, 235)
+    palette["minecraft:black_banner"] = (30, 30, 30)
 
 
 _apply_explicit_palette_colors(PALETTE)
@@ -2879,7 +2886,7 @@ def _generic_palette_family_fallback(block_id: str) -> Optional[Tuple[int, int, 
 VARIANT_PALETTE = {
     # Wood families
     "minecraft:wood|oak": (162, 130, 78),
-    "minecraft:wood|spruce": (92, 66, 44),
+    "minecraft:wood|spruce": (129, 86, 49),
     "minecraft:wood|birch": (200, 186, 120),
     "minecraft:wood|jungle": (154, 110, 77),
     "minecraft:wood|acacia": (170, 92, 60),
@@ -2933,6 +2940,7 @@ PLANT_TYPE_PALETTE = {
     "sunflower": (235, 205, 70),
     "lily_of_the_valley": (235, 235, 235),
     "pink_petals": (242, 127, 165),
+    "peony": (230, 140, 170),
     "wildflowers": (210, 200, 120),
 }
 
@@ -3472,6 +3480,10 @@ def classify_block(block, extra_palette: Optional[Dict[str, Tuple[int, int, int]
             key = f"minecraft:wood|{wood_type}"
             if key in VARIANT_PALETTE:
                 return VARIANT_PALETTE[key], key, True, "variant"
+        if bid in ("minecraft:stairs", "minecraft:slab"):
+            key = f"minecraft:wood|{wood_type}"
+            if key in VARIANT_PALETTE:
+                return VARIANT_PALETTE[key], key, True, "variant"
 
 
     # Variant-aware plant coloring (flowers / foliage)
@@ -3488,6 +3500,11 @@ def classify_block(block, extra_palette: Optional[Dict[str, Tuple[int, int, int]
     if color_name and color_name in COLOR_PALETTE:
         if any(x in bid for x in ("wool", "concrete", "terracotta", "stained_glass")):
             return COLOR_PALETTE[color_name], f"{bid}|{color_name}", True, "variant"
+
+    if props and bid == "minecraft:polished_sulfur_wall":
+        return (220, 180, 48), bid, True, "palette"
+    if props and bid == "minecraft:polished_cinnabar_wall":
+        return (190, 55, 55), bid, True, "palette"
 
     if bid.startswith("minecraft:leaves|") or bid.startswith("minecraft:wood|"):
         variant_key = bid
