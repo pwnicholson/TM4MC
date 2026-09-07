@@ -14,7 +14,7 @@ import json
 import hashlib
 from bisect import bisect_left, bisect_right
 from collections import Counter, deque
-from datetime import datetime
+from datetime import datetime, timezone
 from functools import lru_cache
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
 from pathlib import Path
@@ -33,6 +33,34 @@ except Exception:
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import queue
+
+
+_DEFAULT_EXCEPTHOOK = sys.__excepthook__
+_EXCEPTHOOK_ACTIVE = False
+
+
+def _safe_excepthook(exc_type, exc_value, exc_traceback) -> None:
+    """Print an uncaught exception once without recursively invoking the hook."""
+    global _EXCEPTHOOK_ACTIVE
+    if _EXCEPTHOOK_ACTIVE:
+        try:
+            sys.stderr.write("Recursive exception while reporting an earlier error.\n")
+        except Exception:
+            pass
+        return
+    _EXCEPTHOOK_ACTIVE = True
+    try:
+        _DEFAULT_EXCEPTHOOK(exc_type, exc_value, exc_traceback)
+    except Exception:
+        try:
+            sys.stderr.write(f"{exc_type.__name__}: {exc_value}\n")
+        except Exception:
+            pass
+    finally:
+        _EXCEPTHOOK_ACTIVE = False
+
+
+sys.excepthook = _safe_excepthook
 
 from tm4mc_cache import (
     CACHE_MODE_ALL_BLOCKS,
@@ -144,7 +172,21 @@ def _raw_block_id(block: Any) -> str:
     except Exception:
         pass
 
-    return str(block)
+    raw = str(block)
+    if raw.strip().lower() in {"compoundtag({})", "compoundtag()", "{}"}:
+        return "minecraft:air"
+    return raw
+
+
+def _is_ignorable_world_parse_error(exc: BaseException) -> bool:
+    """Identify malformed optional entity data that should render as empty space."""
+    text = str(exc).lower()
+    return (
+        "could not find actor" in text
+        or "cannot find actor" in text
+        or "compoundtag({})" in text
+        or "empty compound" in text
+    )
 
 
 def _config_path() -> str:
@@ -3182,6 +3224,16 @@ def safe_filename(name: str) -> str:
     return re.sub(r'[<>:"/\\\\|?*]+', "_", name).strip()
 
 
+def format_eta_seconds(seconds: Optional[float]) -> str:
+    """Format ETA as a stable zero-padded HHh MMm SSs string."""
+    if seconds is None:
+        return "ETA: Calculating"
+    total = max(0, int(round(float(seconds))))
+    hours, remainder = divmod(total, 3600)
+    minutes, secs = divmod(remainder, 60)
+    return f"{hours:02d}h {minutes:02d}m {secs:02d}s"
+
+
 def parse_target_preset(preset: str) -> Optional[Tuple[int, int]]:
     p = preset.strip().lower()
     if "4k" in p:
@@ -4537,7 +4589,13 @@ def _scan_column_surface_and_segments(
     current_bottom = y_max
 
     for y in range(y_max, y_min - 1, -1):
-        block = get_block(lx, y, lz)
+        try:
+            block = get_block(lx, y, lz)
+        except Exception as exc:
+            if _is_ignorable_world_parse_error(exc):
+                block = None
+            else:
+                raise
         raw = _raw_block_id(block)
         norm = normalize_block_id(raw)
 
@@ -6404,7 +6462,7 @@ def _compute_auto_strategy(has_psutil: bool, log_cb: Optional[Callable[[str], No
         bc = int(best.get("frame_concurrency", base_initial_concurrency))
         bm = int(best.get("max_concurrency", base_max_concurrency))
         base_workers = max(1, min(4, bw))
-        base_max_concurrency = max(1, min(8, bm))
+        base_max_concurrency = max(base_max_concurrency, max(1, min(8, bm)))
         base_initial_concurrency = base_max_concurrency
 
     strategy = {
@@ -6449,7 +6507,7 @@ def _record_auto_tuner_result(machine_key: str, strategy: Dict[str, Any], render
         "score": round(score, 4),
         "frames_per_min": round(frames_per_min, 4),
         "success_ratio": round(success_ratio, 4),
-        "updated_utc": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+        "updated_utc": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
     }
 
     profile["last"] = candidate
@@ -6741,9 +6799,9 @@ def worker_run(snapshots: List[SnapshotInput],
                         )
                         enough_history = len(cache_chunk_durations) >= 75
                     eta_text = (
-                        f"{int(round(remaining_chunks * average_chunk_seconds))}s"
+                        format_eta_seconds(remaining_chunks * average_chunk_seconds)
                         if enough_history and average_chunk_seconds > 0
-                        else "Calculating"
+                        else "ETA: Calculating"
                     )
                     msgq.put((
                         "progress_update",
@@ -6753,7 +6811,11 @@ def worker_run(snapshots: List[SnapshotInput],
                             "total": max(1, total_prep),
                             "eta_str": (
                                 f"Building cache {prep_index}/{total_prep}: "
-                                f"{display_name} | chunk {int(current)}/{int(total)} | ETA: {eta_text}"
+                                f"{display_name} | chunk {int(current)}/{int(total)} | {eta_text}"
+                            ),
+                            "eta_seconds": (
+                                remaining_chunks * average_chunk_seconds
+                                if enough_history and average_chunk_seconds > 0 else None
                             ),
                             "active_chunk_progress": max(0.0, min(1.0, float(fraction))),
                         },
@@ -7230,21 +7292,14 @@ def worker_run(snapshots: List[SnapshotInput],
             enough_history = len(chunk_time_history) >= 75
 
             if enough_history and average_chunk_seconds > 0 and completed_frames < total_zips:
-                total_seconds = int(round(remaining_chunks * average_chunk_seconds))
-                hours = total_seconds // 3600
-                minutes = (total_seconds % 3600) // 60
-                seconds = total_seconds % 60
-                
-                if hours > 0:
-                    eta_str = f"Estimated time remaining: {hours}h {minutes}m {seconds}s"
-                elif minutes > 0:
-                    eta_str = f"Estimated time remaining: {minutes}m {seconds}s"
-                else:
-                    eta_str = f"Estimated time remaining: {seconds}s"
+                eta_seconds = remaining_chunks * average_chunk_seconds
+                eta_str = format_eta_seconds(eta_seconds)
             elif completed_frames < total_zips:
                 eta_str = "ETA: Calculating"
+                eta_seconds = None
             elif completed_frames >= total_zips:
                 eta_str = "Building animation from frames..."
+                eta_seconds = None
 
             active_chunk_progress = 0.0
             if active > 0:
@@ -7263,6 +7318,7 @@ def worker_run(snapshots: List[SnapshotInput],
                     "in_progress": active,
                     "total": total_zips,
                     "eta_str": eta_str,
+                    "eta_seconds": eta_seconds,
                     "active_chunk_progress": active_chunk_progress,
                 }
             ))
@@ -7423,6 +7479,10 @@ def worker_run(snapshots: List[SnapshotInput],
                 else:
                     opt_for_task.workers = max(1, int(opt.workers))
                 log(
+                    f"[POOL QUEUE ACQUIRE] frame={zip_i:03d} name={name} "
+                    f"pending_before={len(pending_zips_queue)}"
+                )
+                log(
                     f"[FRAME START] #{zip_i:03d}/{total_zips:03d} {name} "
                     f"[source={src_label}, frame_workers={opt_for_task.workers}]"
                 )
@@ -7435,6 +7495,10 @@ def worker_run(snapshots: List[SnapshotInput],
                 start_time = time.time()
                 with frame_lock:
                     in_flight_frames[future] = (snapshot, zip_i, start_time, src_label, stage_path)
+                log(
+                    f"[POOL HANDOFF] frame={zip_i:03d} submitted active={len(in_flight_frames)} "
+                    f"pending_after={len(pending_zips_queue)}"
+                )
                 return future
 
             def _inflight_counts() -> Tuple[int, int]:
@@ -7459,6 +7523,10 @@ def worker_run(snapshots: List[SnapshotInput],
                     snapshot, zip_i = pending_zips_queue.popleft()
                     if _can_submit_snapshot(snapshot):
                         submitted_futures.append(submit_frame(snapshot, zip_i))
+                        log(
+                            f"[POOL DISPATCH] frame={zip_i:03d} dispatched "
+                            f"active={_inflight_counts()[0]} target={current_concurrency}"
+                        )
                     else:
                         pending_zips_queue.append((snapshot, zip_i))
                     attempts -= 1
@@ -7646,6 +7714,10 @@ def worker_run(snapshots: List[SnapshotInput],
                         last_completion_t = time.time()
                         with frame_lock:
                             snapshot, zip_i, start_time, _src, _stage = in_flight_frames.pop(completed_future, (None, None, None, "unknown", ""))
+                        log(
+                            f"[POOL COMPLETE] frame={int(zip_i or 0):03d} "
+                            f"active_after={_inflight_counts()[0]} pending={len(pending_zips_queue)}"
+                        )
                         if success:
                             if snapshot:
                                 frame_no = frame_no_by_path.get(snapshot.path, zip_i)
@@ -7823,17 +7895,20 @@ def worker_run(snapshots: List[SnapshotInput],
                 _send_progress_eta_update(0, len(retry_items) - (i_retry + 1), finished_count)
 
         run_elapsed = max(0.0, time.time() - job_start)
-        _record_auto_tuner_result(
-            str(strategy.get("machine_key", "unknown")),
-            {
-                "frame_workers": int(opt.workers),
-                "initial_concurrency": int(current_concurrency),
-                "max_concurrency": int(max_concurrency),
-            },
-            rendered=len(rendered_frames),
-            elapsed_s=run_elapsed,
-            failed=len(skipped),
-        )
+        try:
+            _record_auto_tuner_result(
+                str(strategy.get("machine_key", "unknown")),
+                {
+                    "frame_workers": int(opt.workers),
+                    "initial_concurrency": int(current_concurrency),
+                    "max_concurrency": int(max_concurrency),
+                },
+                rendered=len(rendered_frames),
+                elapsed_s=run_elapsed,
+                failed=len(skipped),
+            )
+        except Exception as exc:
+            log(f"[AUTO TUNER] Could not save performance profile: {type(exc).__name__}: {exc}")
 
         stop_mode = str((stop_control or {}).get("mode", "partial_gif")).strip().lower()
 
@@ -7948,10 +8023,27 @@ def worker_run(snapshots: List[SnapshotInput],
         log(f"Building GIF from {len(rendered_frames)} frames…")
         progress(93.0)
 
-        # Sort frames chronologically, then align to a common geographic canvas.
-        rendered_frames_sorted = sorted(rendered_frames, key=lambda t: t[0])
+        # Sort successful frames chronologically, dropping only files that are
+        # no longer present before alignment/animation assembly.
+        rendered_frames_sorted = sorted(
+            [item for item in rendered_frames if os.path.isfile(item[1]) and os.path.getsize(item[1]) > 0],
+            key=lambda t: t[0],
+        )
+        if not rendered_frames_sorted:
+            raise RuntimeError("No successfully rendered frame files were available for GIF compilation.")
+        if len(rendered_frames_sorted) != len(rendered_frames):
+            log(
+                f"[GIF] Skipping {len(rendered_frames) - len(rendered_frames_sorted)} missing frame file(s); "
+                f"compiling {len(rendered_frames_sorted)} available frame(s)."
+            )
         aligned_dir = os.path.join(frames_dir, "aligned")
         gif_frame_paths = align_and_composite_frames(rendered_frames_sorted, aligned_dir, log)
+        gif_frame_paths = [
+            path for path in gif_frame_paths
+            if os.path.isfile(path) and os.path.getsize(path) > 0
+        ]
+        if not gif_frame_paths:
+            raise RuntimeError("Frame alignment produced no usable images for GIF compilation.")
 
         label_mode = str(getattr(opt, "frame_label_mode", "No label") or "No label")
         if label_mode.strip().lower() != "no label":
@@ -8655,7 +8747,7 @@ def preflight_report_worker(
         log(f"  Total planned items: {len(plan_items)}")
 
         report_obj: Dict[str, Any] = {
-            "generated_utc": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+            "generated_utc": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
             "app": {
                 "name": APP_NAME,
                 "version": APP_VERSION,
@@ -8818,6 +8910,9 @@ class App(tk.Tk):
         self._close_pending = False
         self._close_deadline = 0.0
         self._paused_worker_pids: List[int] = []
+        self._eta_last_display_time = 0.0
+        self._eta_ema_seconds: Optional[float] = None
+        self._eta_ema_alpha = 0.25
 
         # --- Timelapse tab vars ---
         self.folder_var = tk.StringVar()
@@ -11310,6 +11405,8 @@ class App(tk.Tk):
             pass
 
     def _clear_progress_vars(self):
+        self._eta_ema_seconds = None
+        self._eta_last_display_time = 0.0
         try:
             self.frames_completed_var.set("")
             self.frames_progress_var.set("")
@@ -11975,13 +12072,29 @@ class App(tk.Tk):
                     in_progress = int(payload.get("in_progress", 0))
                     total = int(payload.get("total", 0))
                     eta_str = str(payload.get("eta_str", ""))
+                    eta_seconds = payload.get("eta_seconds")
                     active_chunk_progress = float(payload.get("active_chunk_progress", 0.0))
 
                     if total > 0:
                         self.frames_completed_var.set(f"Completed frames: {completed}")
                         self.frames_progress_var.set(f"Frames in progress: {in_progress}")
                         self.frames_total_var.set(f"Total frames: {total}")
-                        self.eta_var.set(eta_str)
+                        if eta_seconds is not None:
+                            eta_seconds = float(eta_seconds)
+                            if self._eta_ema_seconds is None:
+                                self._eta_ema_seconds = eta_seconds
+                            else:
+                                self._eta_ema_seconds = (
+                                    self._eta_ema_alpha * eta_seconds
+                                    + (1.0 - self._eta_ema_alpha) * self._eta_ema_seconds
+                                )
+                            now = time.monotonic()
+                            if now - self._eta_last_display_time >= 1.0:
+                                self.eta_var.set(format_eta_seconds(self._eta_ema_seconds))
+                                self._eta_last_display_time = now
+                        elif time.monotonic() - self._eta_last_display_time >= 1.0:
+                            self.eta_var.set(eta_str)
+                            self._eta_last_display_time = time.monotonic()
                         if hasattr(self, "progress_bar"):
                             self.progress_bar.set_progress(completed, in_progress, total, active_chunk_progress)
                     else:
@@ -11996,6 +12109,8 @@ class App(tk.Tk):
                     self._set_busy(False)
                     self.current_task = None
                     self.eta_var.set("Complete")
+                    self._eta_ema_seconds = None
+                    self._eta_last_display_time = time.monotonic()
                     if hasattr(self, "progress_bar"):
                         tot = getattr(self.progress_bar, "_total", 0)
                         if tot > 0:

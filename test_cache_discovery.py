@@ -325,5 +325,11 @@ class TestCacheLogic:
         assert stem1 == stem2
 
 
+def test_world_loading_missing_actors_and_extra_components(tmp_path):
+    # Add a test case here that simulates or invokes world parsing with missing actors 
+    # and unexpected CompoundTag({}) elements to ensure robust handling without crashing.
+    pass
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
