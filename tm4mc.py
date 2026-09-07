@@ -3027,6 +3027,7 @@ class RenderOptions:
     debug_log_unknowns: bool = True
     stop_on_bad_chunk_data: bool = False
     debug_raw_ids: bool = False
+    cache_only: bool = False
 
     # Output options
     output_name: str = ""
@@ -4714,12 +4715,16 @@ def build_snapshot_cache(
     progress_cb: Optional[Callable[[int, int, float], None]] = None,
     cancel_event: Optional[threading.Event] = None,
     stats_out: Optional[Dict[str, Any]] = None,
+    crop_bounds: Optional[Tuple[int, int, int, int]] = None,
+    target_preset: str = "",
+    output_path: Optional[str] = None,
+    ephemeral: bool = False,
 ) -> str:
     source_path = snapshot.raw_path or snapshot.path
     if is_cache_file(source_path):
         raise RuntimeError("Cannot build a cache from an existing .wmtt4mc cache file.")
 
-    cache_path = sidecar_cache_path(source_path, dimension, cache_mode)
+    cache_path = output_path or sidecar_cache_path(source_path, dimension, cache_mode)
     world0 = None
     tmpdir = tempfile.mkdtemp(prefix="tm4mc_cache_")
 
@@ -4753,6 +4758,25 @@ def build_snapshot_cache(
         min_cz = min(cz for _, cz in chunk_coords)
         max_cz = max(cz for _, cz in chunk_coords)
 
+        if crop_bounds is not None:
+            x_min, x_max, z_min, z_max = (int(v) for v in crop_bounds)
+            x_min, x_max = min(x_min, x_max), max(x_min, x_max)
+            z_min, z_max = min(z_min, z_max), max(z_min, z_max)
+            crop_min_cx, crop_max_cx = x_min // 16, x_max // 16
+            crop_min_cz, crop_max_cz = z_min // 16, z_max // 16
+            chunk_coords = [
+                (cx, cz) for cx, cz in chunk_coords
+                if crop_min_cx <= cx <= crop_max_cx and crop_min_cz <= cz <= crop_max_cz
+            ]
+            if not chunk_coords:
+                raise RuntimeError("No chunks found inside the requested crop bounds.")
+            min_cx = min(cx for cx, _ in chunk_coords)
+            max_cx = max(cx for cx, _ in chunk_coords)
+            min_cz = min(cz for _, cz in chunk_coords)
+            max_cz = max(cz for _, cz in chunk_coords)
+
+        os.makedirs(os.path.dirname(os.path.abspath(cache_path)), exist_ok=True)
+
         signature = build_source_signature(source_path)
         metadata = {
             **signature,
@@ -4764,7 +4788,15 @@ def build_snapshot_cache(
             "max_cx": int(max_cx),
             "min_cz": int(min_cz),
             "max_cz": int(max_cz),
+            "ephemeral": bool(ephemeral),
         }
+        if crop_bounds is not None:
+            metadata["crop_bounds"] = [int(v) for v in crop_bounds]
+        if target_preset:
+            metadata["target_preset"] = str(target_preset)
+            target_size = parse_target_preset(target_preset)
+            if target_size is not None:
+                metadata["target_resolution"] = [int(target_size[0]), int(target_size[1])]
         writer = CacheWriter(cache_path, metadata)
 
         include_segments = cache_mode == CACHE_MODE_ALL_BLOCKS
@@ -5453,6 +5485,11 @@ def render_snapshot_input(
                         cancel_event=cancel_event,
                     )
                 if raw_src and (is_world_archive_file(raw_src) or is_world_folder(raw_src)):
+                    if getattr(opt, "cache_only", False):
+                        raise RuntimeError(
+                            "Cache is incompatible with the requested render settings; "
+                            "raw rendering is disabled for this timelapse."
+                        )
                     if log_cb:
                         log_cb(
                             f"[FALLBACK] No all-blocks cache available. "
@@ -6359,7 +6396,7 @@ def _compute_auto_strategy(has_psutil: bool, log_cb: Optional[Callable[[str], No
     elif mem_gb and mem_gb <= 12:
         base_max_concurrency = max(1, min(base_max_concurrency, 4))
 
-    base_initial_concurrency = max(1, min(base_max_concurrency, max(1, base_max_concurrency - 1)))
+    base_initial_concurrency = base_max_concurrency
 
     best = profile.get("best", {}) if isinstance(profile.get("best", {}), dict) else {}
     if best:
@@ -6368,7 +6405,7 @@ def _compute_auto_strategy(has_psutil: bool, log_cb: Optional[Callable[[str], No
         bm = int(best.get("max_concurrency", base_max_concurrency))
         base_workers = max(1, min(4, bw))
         base_max_concurrency = max(1, min(8, bm))
-        base_initial_concurrency = max(1, min(base_max_concurrency, bc))
+        base_initial_concurrency = base_max_concurrency
 
     strategy = {
         "machine_key": machine_key,
@@ -6436,6 +6473,23 @@ def worker_run(snapshots: List[SnapshotInput],
         run_dir = os.path.join(out_dir, f"timelapse_{run_id}")
         frames_dir = os.path.join(run_dir, "frames")
         os.makedirs(frames_dir, exist_ok=True)
+        ephemeral_cache_paths: List[str] = []
+
+        def cleanup_ephemeral_caches() -> None:
+            cache_dirs = {os.path.dirname(path) for path in ephemeral_cache_paths}
+            for cache_path in list(ephemeral_cache_paths):
+                try:
+                    if os.path.isfile(cache_path):
+                        os.remove(cache_path)
+                except Exception:
+                    pass
+            ephemeral_cache_paths.clear()
+            for cache_dir in cache_dirs:
+                try:
+                    if os.path.isdir(cache_dir) and not os.listdir(cache_dir):
+                        os.rmdir(cache_dir)
+                except Exception:
+                    pass
 
         run_log_path = os.path.join(run_dir, "run.log")
         run_log = open(run_log_path, "a", encoding="utf-8", buffering=1, newline="\n")
@@ -6608,15 +6662,103 @@ def worker_run(snapshots: List[SnapshotInput],
 
         requested_cache_mode = str(output_cache_mode or "").strip().lower()
         if requested_cache_mode not in (CACHE_MODE_SURFACE, CACHE_MODE_ALL_BLOCKS):
-            requested_cache_mode = CACHE_MODE_NONE
+            requested_cache_mode = CACHE_MODE_SURFACE
+        opt.cache_only = True
+        crop_bounds = None
+        if opt.limit_enabled:
+            crop_bounds = (opt.x_min, opt.x_max, opt.z_min, opt.z_max)
+        resolution_limited = "original" not in str(opt.target_preset).strip().lower()
+        partial_cache_required = crop_bounds is not None or resolution_limited
 
         if requested_cache_mode != CACHE_MODE_NONE:
             log(
                 f"[CACHE OUTPUT] Prebuilding '{requested_cache_mode}' sidecar caches before render "
                 "when missing or mismatched for this run's settings."
             )
-            prepared_snapshots: List[SnapshotInput] = []
+            prepared_snapshots: List[Optional[SnapshotInput]] = [None] * len(snapshots)
             total_prep = len(snapshots)
+            cache_progress_started = time.time()
+            cache_progress_last: Dict[int, Tuple[int, float]] = {}
+            cache_chunk_durations: deque = deque(maxlen=75)
+            cache_progress_lock = threading.Lock()
+            cache_totals: Dict[int, int] = {}
+            cache_completed: Dict[int, int] = {}
+            cache_active: set = set()
+            cache_finished: set = set()
+
+            def _cache_chunk_estimate(raw_src: str) -> int:
+                try:
+                    if os.path.isfile(raw_src):
+                        return max(1, int(os.path.getsize(raw_src) / 20000))
+                    if os.path.isdir(raw_src):
+                        size = 0
+                        for root, _dirs, files in os.walk(raw_src):
+                            for name in files:
+                                size += os.path.getsize(os.path.join(root, name))
+                        return max(1, int(size / 80000))
+                except Exception:
+                    pass
+                return 5000
+
+            for _prep_index, _snapshot in enumerate(snapshots, start=1):
+                _raw_src = _snapshot.raw_path or (_snapshot.path if not is_cache_file(_snapshot.path) else "")
+                _estimated_total = 0
+                if is_cache_file(_snapshot.path):
+                    try:
+                        _estimated_total = int(read_cache_header(_snapshot.path).get("chunks_total", 0))
+                    except Exception:
+                        _estimated_total = 0
+                if _estimated_total <= 0 and _raw_src:
+                    _estimated_total = _cache_chunk_estimate(_raw_src)
+                if _estimated_total > 0:
+                    cache_totals[_prep_index] = _estimated_total
+                    cache_completed[_prep_index] = 0
+
+            def _cache_progress_callback(
+                prep_index: int,
+                display_name: str,
+            ) -> Callable[[int, int, float], None]:
+                def _update(current: int, total: int, fraction: float) -> None:
+                    now = time.time()
+                    with cache_progress_lock:
+                        previous_current, previous_time = cache_progress_last.get(
+                            prep_index, (0, now)
+                        )
+                        delta_chunks = max(0, int(current) - previous_current)
+                        if delta_chunks > 0 and now > previous_time:
+                            per_chunk = (now - previous_time) / delta_chunks
+                            cache_chunk_durations.extend([per_chunk] * delta_chunks)
+                        cache_progress_last[prep_index] = (int(current), now)
+                        cache_totals[prep_index] = int(total)
+                        cache_completed[prep_index] = int(current)
+                        remaining_chunks = sum(
+                            max(0, cache_totals[index] - cache_completed.get(index, 0))
+                            for index in cache_totals
+                        )
+                        average_chunk_seconds = (
+                            sum(cache_chunk_durations) / len(cache_chunk_durations)
+                            if cache_chunk_durations else 0.0
+                        )
+                        enough_history = len(cache_chunk_durations) >= 75
+                    eta_text = (
+                        f"{int(round(remaining_chunks * average_chunk_seconds))}s"
+                        if enough_history and average_chunk_seconds > 0
+                        else "Calculating"
+                    )
+                    msgq.put((
+                        "progress_update",
+                        {
+                            "completed": len(cache_finished),
+                            "in_progress": len(cache_active),
+                            "total": max(1, total_prep),
+                            "eta_str": (
+                                f"Building cache {prep_index}/{total_prep}: "
+                                f"{display_name} | chunk {int(current)}/{int(total)} | ETA: {eta_text}"
+                            ),
+                            "active_chunk_progress": max(0.0, min(1.0, float(fraction))),
+                        },
+                    ))
+                return _update
 
             def _cache_is_usable_for_render(cache_path: str, raw_src: str) -> bool:
                 try:
@@ -6661,6 +6803,31 @@ def worker_run(snapshots: List[SnapshotInput],
                     _needs_build_count += 1
             total_needs_build = max(1, _needs_build_count)
             completed_builds = [0]
+            cache_executor = ThreadPoolExecutor(max_workers=min(8, total_needs_build))
+            cache_futures: Dict[int, Tuple[Any, SnapshotInput, str, str]] = {}
+
+            def _build_cache_job(
+                prep_i: int,
+                snap_for_build: SnapshotInput,
+                built_cache_path: str,
+                display_name: str,
+            ) -> str:
+                return build_snapshot_cache(
+                    snapshot=snap_for_build,
+                    cache_mode=requested_cache_mode,
+                    dimension=opt.dimension,
+                    y_min=opt.y_min,
+                    y_max=opt.y_max,
+                    stop_on_bad_chunk_data=bool(getattr(opt, "stop_on_bad_chunk_data", False)),
+                    log_cb=lambda m: log(f"[CACHE OUTPUT] {m}"),
+                    progress_cb=_cache_progress_callback(prep_i, display_name),
+                    cancel_event=cancel_event,
+                    crop_bounds=crop_bounds,
+                    target_preset=opt.target_preset,
+                    output_path=built_cache_path,
+                    ephemeral=partial_cache_required,
+                )
+
             for prep_i, snap in enumerate(snapshots, start=1):
                 if cancel_event.is_set():
                     log("[CACHE OUTPUT] Stop requested during cache preparation.")
@@ -6670,16 +6837,22 @@ def worker_run(snapshots: List[SnapshotInput],
                 can_build = bool(raw_src) and (is_world_archive_file(raw_src) or is_world_folder(raw_src))
 
                 if is_cache_file(snap.path) and _cache_is_usable_for_render(snap.path, raw_src):
-                    prepared_snapshots.append(snap)
+                    with cache_progress_lock:
+                        cache_completed[prep_i] = cache_totals.get(prep_i, 0)
+                        cache_finished.add(prep_i)
+                    prepared_snapshots[prep_i - 1] = snap
                     continue
 
                 if not can_build:
+                    with cache_progress_lock:
+                        cache_completed[prep_i] = cache_totals.get(prep_i, 0)
+                        cache_finished.add(prep_i)
                     if is_cache_file(snap.path):
                         log(
                             f"[CACHE OUTPUT] {prep_i:02d}/{total_prep:02d} keeping existing cache "
                             f"(no raw source available to rebuild): {os.path.basename(snap.path)}"
                         )
-                    prepared_snapshots.append(snap)
+                    prepared_snapshots[prep_i - 1] = snap
                     continue
 
                 target_cache_path = sidecar_cache_path(raw_src, opt.dimension, requested_cache_mode)
@@ -6693,9 +6866,17 @@ def worker_run(snapshots: List[SnapshotInput],
                 )
 
                 if is_match:
+                    try:
+                        cache_header_total = int(read_cache_header(target_cache_path).get("chunks_total", 0))
+                    except Exception:
+                        cache_header_total = 0
+                    with cache_progress_lock:
+                        if cache_header_total > 0:
+                            cache_totals[prep_i] = cache_header_total
+                        cache_completed[prep_i] = cache_totals.get(prep_i, 0)
+                        cache_finished.add(prep_i)
                     log(f"[CACHE OUTPUT] {prep_i:02d}/{total_prep:02d} using existing cache: {os.path.basename(target_cache_path)}")
-                    prepared_snapshots.append(
-                        SnapshotInput(
+                    prepared_snapshots[prep_i - 1] = SnapshotInput(
                             kind="cache",
                             path=target_cache_path,
                             display_name=snap.display_name,
@@ -6703,62 +6884,78 @@ def worker_run(snapshots: List[SnapshotInput],
                             raw_path=raw_src,
                             cache_path=target_cache_path,
                             warning=snap.warning,
-                        )
                     )
                     continue
 
+                status(f"Building caches: {snap.display_name}", "Loading world...")
+                log(
+                    f"[CACHE OUTPUT] {prep_i:02d}/{total_prep:02d} building cache for {snap.display_name} "
+                    f"({reason})"
+                )
+                snap_for_build = SnapshotInput(
+                    kind="zip" if os.path.isfile(raw_src) else "folder",
+                    path=raw_src,
+                    display_name=snap.display_name,
+                    sort_name=snap.sort_name,
+                    raw_path=raw_src,
+                )
+                built_cache_path = target_cache_path
+                if partial_cache_required:
+                    ephemeral_dir = os.path.join(run_dir, "ephemeral_caches")
+                    built_cache_path = os.path.join(
+                        ephemeral_dir,
+                        f"{safe_filename(snap.display_name)}_{opt.dimension.replace(':', '_')}_{requested_cache_mode}.wmtt4mc",
+                    )
+                    ephemeral_cache_paths.append(built_cache_path)
+                cache_futures[prep_i] = (
+                    cache_executor.submit(_build_cache_job, prep_i, snap_for_build, built_cache_path, snap.display_name),
+                    snap,
+                    raw_src,
+                    built_cache_path,
+                )
+                with cache_progress_lock:
+                    cache_active.add(prep_i)
+
+            for prep_i, (future, snap, raw_src, built_cache_path) in cache_futures.items():
                 try:
-                    status(
-                        f"Building caches: {snap.display_name}",
-                        "Loading world...",
-                    )
-                    log(
-                        f"[CACHE OUTPUT] {prep_i:02d}/{total_prep:02d} building cache for {snap.display_name} "
-                        f"({reason})"
-                    )
-                    snap_for_build = SnapshotInput(
-                        kind="zip" if os.path.isfile(raw_src) else "folder",
-                        path=raw_src,
+                    built_cache_path = future.result()
+                    completed_builds[0] += 1
+                    with cache_progress_lock:
+                        cache_active.discard(prep_i)
+                        cache_finished.add(prep_i)
+                    prepared_snapshots[prep_i - 1] = SnapshotInput(
+                        kind="cache",
+                        path=built_cache_path,
                         display_name=snap.display_name,
                         sort_name=snap.sort_name,
                         raw_path=raw_src,
-                    )
-                    built_cache_path = build_snapshot_cache(
-                        snapshot=snap_for_build,
-                        cache_mode=requested_cache_mode,
-                        dimension=opt.dimension,
-                        y_min=opt.y_min,
-                        y_max=opt.y_max,
-                        stop_on_bad_chunk_data=bool(getattr(opt, "stop_on_bad_chunk_data", False)),
-                        log_cb=lambda m: log(f"[CACHE OUTPUT] {m}"),
-                        progress_cb=None,
-                        cancel_event=cancel_event,
-                    )
-                    completed_builds[0] += 1
-                    prepared_snapshots.append(
-                        SnapshotInput(
-                            kind="cache",
-                            path=built_cache_path,
-                            display_name=snap.display_name,
-                            sort_name=snap.sort_name,
-                            raw_path=raw_src,
-                            cache_path=built_cache_path,
-                            warning=snap.warning,
-                        )
+                        cache_path=built_cache_path,
+                        warning=snap.warning,
                     )
                     log(f"[CACHE OUTPUT] Built cache for {snap.display_name}: {os.path.basename(built_cache_path)}")
                 except CancelledError:
+                    cache_executor.shutdown(wait=False, cancel_futures=True)
                     log("[CACHE OUTPUT] Cache preparation cancelled by user.")
                     break
                 except Exception as exc:
+                    cache_executor.shutdown(wait=False, cancel_futures=True)
+                    with cache_progress_lock:
+                        cache_active.discard(prep_i)
                     log(
                         f"[CACHE OUTPUT] Cache build failed for {snap.display_name}: "
-                        f"{type(exc).__name__}: {exc}. Falling back to raw render for this snapshot."
+                        f"{type(exc).__name__}: {exc}. Timelapse cannot continue without a cache."
                     )
-                    prepared_snapshots.append(snap)
+                    raise RuntimeError(
+                        f"Could not build cache for {snap.display_name}; raw rendering is disabled for timelapses."
+                    ) from exc
+            cache_executor.shutdown(wait=True, cancel_futures=False)
 
-            if prepared_snapshots:
-                snapshots = prepared_snapshots
+            snapshots = [snapshot for snapshot in prepared_snapshots if snapshot is not None]
+            if not cancel_event.is_set() and any(not is_cache_file(s.path) for s in snapshots):
+                raise RuntimeError(
+                    "Timelapse cache preparation completed with an uncached snapshot; "
+                    "raw rendering is disabled."
+                )
             status("Rendering frames…", "")
             progress(0.0)
             log("-" * 60)
@@ -6990,6 +7187,9 @@ def worker_run(snapshots: List[SnapshotInput],
             return estimates
 
         frame_completion_history = deque(maxlen=10)
+        chunk_time_history = deque(maxlen=75)
+        render_chunk_state: Dict[str, List[float]] = {}
+        render_chunk_last_seen: Dict[str, Tuple[int, float]] = {}
         completed_chunks_rendered_only = 0.0
         last_eta_calc_time = 0.0
         last_eta_val = None
@@ -6998,46 +7198,39 @@ def worker_run(snapshots: List[SnapshotInput],
             nonlocal last_eta_calc_time, last_eta_val, completed_chunks_rendered_only
             now = time.time()
             current_estimates = _recalculate_snapshot_chunk_estimates()
-            total_chunks_project = sum(current_estimates.values())
-            
-            completed_chunks = completed_chunks_rendered_only
             for snap in snapshots:
-                if any(x[0] == snap.display_name for x in skipped):
-                    completed_chunks += current_estimates.get(snap.path, 5000)
-            
-            remaining_chunks = max(0.0, total_chunks_project - completed_chunks)
-            
-            # Smooth ETA calculation, updating every 5 seconds
-            if last_eta_val is None or (now - last_eta_calc_time) >= 5.0:
-                last_eta_calc_time = now
-                overall_elapsed = max(1.0, now - job_start)
-                overall_speed = completed_chunks_rendered_only / overall_elapsed
-                
-                moving_speed = None
-                if len(frame_completion_history) >= 2:
-                    t_old, _ = frame_completion_history[0]
-                    t_new, _ = frame_completion_history[-1]
-                    time_diff = t_new - t_old
-                    if time_diff > 3.0:
-                        chunks_window = sum(ch for _, ch in list(frame_completion_history)[1:])
-                        moving_speed = chunks_window / time_diff
-                
-                if moving_speed is not None and moving_speed > 0:
-                    current_speed = 0.7 * moving_speed + 0.3 * overall_speed
-                else:
-                    current_speed = overall_speed
-                
-                if current_speed > 0 and (completed_frames > 0 or completed_chunks_rendered_only > 0):
-                    raw_rem_sec = (remaining_chunks / current_speed) * 1.05
-                    if last_eta_val is None:
-                        last_eta_val = raw_rem_sec
-                    else:
-                        last_eta_val = 0.7 * raw_rem_sec + 0.3 * last_eta_val
-                else:
-                    last_eta_val = None
-            
-            if last_eta_val is not None and completed_frames < total_zips:
-                total_seconds = int(round(last_eta_val))
+                render_chunk_state.setdefault(snap.path, [0.0, float(current_estimates.get(snap.path, 5000)), 0.0])
+
+            with frame_lock:
+                active_items = list(in_flight_frames.values())
+            for snap, zip_i, _start, _src, _stage in active_items:
+                progress_path = os.path.join(run_dir, f"frame_progress_{zip_i:03d}.txt")
+                try:
+                    with open(progress_path, "r", encoding="utf-8") as pf:
+                        done_text, total_text = pf.read().strip().split("\t")[:2]
+                    current = int(done_text)
+                    total = max(1, int(total_text))
+                    key = snap.path
+                    previous_done, previous_time = render_chunk_last_seen.get(key, (0, now))
+                    delta = max(0, current - previous_done)
+                    if delta > 0 and now > previous_time:
+                        chunk_time_history.extend([(now - previous_time) / delta] * delta)
+                    render_chunk_last_seen[key] = (current, now)
+                    render_chunk_state[key] = [float(current), float(total), now]
+                except (OSError, ValueError):
+                    pass
+
+            total_chunks_project = sum(int(state[1]) for state in render_chunk_state.values())
+            completed_chunks = sum(min(state[0], state[1]) for state in render_chunk_state.values())
+            remaining_chunks = max(0.0, float(total_chunks_project) - completed_chunks)
+            average_chunk_seconds = (
+                sum(chunk_time_history) / len(chunk_time_history)
+                if chunk_time_history else 0.0
+            )
+            enough_history = len(chunk_time_history) >= 75
+
+            if enough_history and average_chunk_seconds > 0 and completed_frames < total_zips:
+                total_seconds = int(round(remaining_chunks * average_chunk_seconds))
                 hours = total_seconds // 3600
                 minutes = (total_seconds % 3600) // 60
                 seconds = total_seconds % 60
@@ -7048,20 +7241,20 @@ def worker_run(snapshots: List[SnapshotInput],
                     eta_str = f"Estimated time remaining: {minutes}m {seconds}s"
                 else:
                     eta_str = f"Estimated time remaining: {seconds}s"
+            elif completed_frames < total_zips:
+                eta_str = "ETA: Calculating"
             elif completed_frames >= total_zips:
                 eta_str = "Building animation from frames..."
-            else:
-                eta_str = "ETA: Estimating..."
 
             active_chunk_progress = 0.0
-            if active > 0 and in_flight_frames:
-                with frame_lock:
-                    elapsed_list = [now - st for (_snap, _zi, st, _src, _stage) in in_flight_frames.values()]
-                if zip_times and elapsed_list:
-                    avg_frame_time = sum(zip_times) / len(zip_times)
-                    if avg_frame_time > 0:
-                        progs = [min(0.95, el / avg_frame_time) for el in elapsed_list]
-                        active_chunk_progress = sum(progs) / len(progs)
+            if active > 0:
+                active_progresses = [
+                    min(0.99, state[0] / max(1.0, state[1]))
+                    for state in render_chunk_state.values()
+                    if state[0] < state[1]
+                ]
+                if active_progresses:
+                    active_chunk_progress = sum(active_progresses) / len(active_progresses)
 
             msgq.put((
                 "progress_update",
@@ -7131,7 +7324,6 @@ def worker_run(snapshots: List[SnapshotInput],
         force_early_shutdown = False
         stalled_retry_items: List[Tuple[SnapshotInput, int, str]] = []
         queued_retry_items: List[Tuple[SnapshotInput, int, str]] = []
-        RAW_INFLIGHT_LIMIT = 1
         raw_zip_times: List[float] = []
 
         frame_executor = ProcessPoolExecutor(max_workers=max_concurrency)
@@ -7253,17 +7445,10 @@ def worker_run(snapshots: List[SnapshotInput],
                 return active, raw_active
 
             def _can_submit_snapshot(snapshot: SnapshotInput) -> bool:
-                _active, raw_active = _inflight_counts()
-                if _source_label(snapshot) == "raw" and raw_active >= RAW_INFLIGHT_LIMIT:
-                    return False
                 return True
 
             def _try_submit_more() -> None:
-                """Submit more work without exceeding concurrency or raw inflight cap.
-
-                We rotate through the queue so cache-backed snapshots can start even if
-                a raw snapshot at the front is temporarily blocked by RAW_INFLIGHT_LIMIT.
-                """
+                """Submit work until the adaptive frame-concurrency target is full."""
                 if not pending_zips_queue:
                     return
                 attempts = len(pending_zips_queue)
@@ -7468,6 +7653,7 @@ def worker_run(snapshots: List[SnapshotInput],
                                 rendered_frames.append((frame_no, frame_png, bounds))
                                 actual_chunks = bounds[4] if (bounds is not None and len(bounds) > 4) else current_estimates.get(snapshot.path, 5000)
                                 snapshot_known_chunks[snapshot.path] = actual_chunks
+                                render_chunk_state[snapshot.path] = [float(actual_chunks), float(actual_chunks), time.time()]
                                 completed_chunks_rendered_only += actual_chunks
                                 frame_completion_history.append((time.time(), actual_chunks))
                                 elapsed = max(0.0, time.time() - float(start_time or time.time()))
@@ -7483,6 +7669,7 @@ def worker_run(snapshots: List[SnapshotInput],
                         else:
                             if snapshot:
                                 reason = error_reason or "Render failed"
+                                render_chunk_state[snapshot.path][0] = render_chunk_state[snapshot.path][1]
                                 skipped.append((name, reason, error_log_path or ""))
                                 log(f"[FRAME FAILED] {name}: {reason}")
                                 if error_log_path:
@@ -7654,6 +7841,7 @@ def worker_run(snapshots: List[SnapshotInput],
             log("-" * 60)
             log("Stopped immediately by user. Skipping GIF build.")
             run_log.close()
+            cleanup_ephemeral_caches()
             msgq.put(("done", {
                 "run_dir": run_dir,
                 "frames_dir": frames_dir,
@@ -7671,6 +7859,7 @@ def worker_run(snapshots: List[SnapshotInput],
                 log("-" * 60)
                 log("Stopped by user before any frame completed.")
                 run_log.close()
+                cleanup_ephemeral_caches()
                 msgq.put(("done", {
                     "run_dir": run_dir,
                     "frames_dir": frames_dir,
@@ -7739,6 +7928,7 @@ def worker_run(snapshots: List[SnapshotInput],
                 "\n\nCheck skipped_backups.txt and run.log in the output folder for details."
             ))
             run_log.close()
+            cleanup_ephemeral_caches()
             return
 
         if cancel_event.is_set():
@@ -7840,6 +8030,7 @@ def worker_run(snapshots: List[SnapshotInput],
             log(f"Wrote skip report: {skipped_report}")
         
         run_log.close()
+        cleanup_ephemeral_caches()
 
         if skipped:
             msgq.put(("error",
@@ -7860,6 +8051,7 @@ def worker_run(snapshots: List[SnapshotInput],
         }))
 
     except Exception:
+        cleanup_ephemeral_caches()
         msgq.put(("error", traceback.format_exc()))
 
 
@@ -7890,6 +8082,20 @@ def _render_frame_task(
 
     header = f"Frame {zip_i}/{total_zips}: {name}"
     opt_for_frame = opt
+    progress_path = os.path.join(run_dir, f"frame_progress_{zip_i:03d}.txt")
+    last_progress_write = [0.0]
+
+    def _frame_progress(current: int, total: int, _fraction: float) -> None:
+        now = time.time()
+        if current != total and (now - last_progress_write[0]) < 0.5:
+            return
+        try:
+            with open(progress_path + ".tmp", "w", encoding="utf-8") as pf:
+                pf.write(f"{int(current)}\t{int(total)}\n")
+            os.replace(progress_path + ".tmp", progress_path)
+            last_progress_write[0] = now
+        except Exception:
+            pass
 
     try:
         _write_stage("frame.start")
@@ -7898,7 +8104,7 @@ def _render_frame_task(
             frame_png,
             opt_for_frame,
             log_cb=None,
-            progress_cb=None,
+            progress_cb=_frame_progress,
             cancel_event=cancel_event,
             debug_snapshot_path=debug_snapshot_path,
             debug_context_header=header,
@@ -11412,7 +11618,13 @@ class App(tk.Tk):
             self._log(text, "timelapse")
 
         _, _diag = discover_with_diagnostics(folder, log_cb=_diag_log, dimension=_timelapse_dimension_to_id(self.dimension_var.get()))
-        self._log(f"Output cache mode: {self.cache_mode_var.get()}", "timelapse")
+        selected_cache_mode = self.cache_mode_var.get().strip().lower()
+        timelapse_cache_mode = (
+            selected_cache_mode
+            if selected_cache_mode in (CACHE_MODE_SURFACE, CACHE_MODE_ALL_BLOCKS)
+            else CACHE_MODE_SURFACE
+        )
+        self._log(f"Output cache mode: {timelapse_cache_mode} (required for timelapse rendering)", "timelapse")
         
         self._log("Note: output cache mode can prebuild .wmtt4mc sidecar caches before rendering.", "timelapse")
         for snapshot in snapshots:
@@ -11441,7 +11653,7 @@ class App(tk.Tk):
                 self.cancel_event,
                 stop_control=self.stop_control,
                 input_folder=folder,
-                output_cache_mode=self.cache_mode_var.get(),
+                output_cache_mode=timelapse_cache_mode,
                 discovery_lines=discovery_lines,
             )
 
