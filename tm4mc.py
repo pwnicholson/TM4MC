@@ -8358,6 +8358,57 @@ def cache_build_worker(
     except Exception:
         pass
 
+    progress_lock = threading.Lock()
+    progress_totals: Dict[int, int] = {}
+    progress_done: Dict[int, int] = {}
+    progress_active: set = set()
+    progress_finished: set = set()
+    progress_samples: deque = deque(maxlen=75)
+    progress_last_seen: Dict[int, Tuple[int, float]] = {}
+
+    def _estimate_chunks(source_path: str) -> int:
+        try:
+            if os.path.isfile(source_path):
+                return max(1, int(os.path.getsize(source_path) / 20000))
+            if os.path.isdir(source_path):
+                size = 0
+                for root, _dirs, files in os.walk(source_path):
+                    for name in files:
+                        size += os.path.getsize(os.path.join(root, name))
+                return max(1, int(size / 80000))
+        except Exception:
+            pass
+        return 5000
+
+    def _emit_progress() -> None:
+        with progress_lock:
+            totals = sum(progress_totals.values())
+            done = sum(min(progress_done.get(i, 0), total) for i, total in progress_totals.items())
+            remaining = max(0, totals - done)
+            avg = sum(progress_samples) / len(progress_samples) if progress_samples else 0.0
+            eta_seconds = remaining * avg if len(progress_samples) >= 75 and avg > 0 else None
+            active = len(progress_active)
+            finished = len(progress_finished)
+            total_items_now = max(1, total_items)
+        msgq.put((
+            "progress_update",
+            {
+                "completed": finished,
+                "in_progress": active,
+                "total": total_items_now,
+                "eta_str": format_eta_seconds(eta_seconds),
+                "eta_seconds": eta_seconds,
+                "active_chunk_progress": (
+                    sum(
+                        min(1.0, progress_done.get(i, 0) / max(1, progress_totals.get(i, 1)))
+                        for i in progress_active
+                    ) / max(1, active)
+                    if active else 0.0
+                ),
+                "phase": "cache",
+            },
+        ))
+
     def log(msg: str):
         msgq.put(("log", msg))
 
@@ -8378,10 +8429,21 @@ def cache_build_worker(
         display_name = snapshot.display_name
         item_label = f"{display_name} [{dim_label}]" if n_dims > 1 else display_name
 
+        with progress_lock:
+            progress_totals[item_index] = _estimate_chunks(source_path)
+            progress_done[item_index] = 0
+            progress_active.add(item_index)
+        _emit_progress()
+
         if os.path.isfile(cache_path) and _cache_matches_requested_settings(
             cache_path, source_path, cache_mode, dimension, y_min, y_max
         ):
             log(f"Skipping up-to-date cache: {item_label}")
+            with progress_lock:
+                progress_done[item_index] = progress_totals[item_index]
+                progress_active.discard(item_index)
+                progress_finished.add(item_index)
+            _emit_progress()
             return {"status": "skipped", "item_index": item_index, "item_label": item_label}
 
         msgq.put(("status", (
@@ -8391,10 +8453,23 @@ def cache_build_worker(
 
         try:
             cache_stats: Dict[str, Any] = {}
+
+            def cache_progress(current: int, total: int, _fraction: float) -> None:
+                now = time.time()
+                with progress_lock:
+                    previous_current, previous_time = progress_last_seen.get(item_index, (0, now))
+                    delta = max(0, int(current) - previous_current)
+                    if delta and now > previous_time:
+                        progress_samples.extend([(now - previous_time) / delta] * delta)
+                    progress_last_seen[item_index] = (int(current), now)
+                    progress_totals[item_index] = max(1, int(total))
+                    progress_done[item_index] = int(current)
+                _emit_progress()
+
             build_snapshot_cache(
                 snapshot, cache_mode, dimension, y_min, y_max,
                 stop_on_bad_chunk_data=bool(stop_on_bad_chunk_data),
-                log_cb=log, progress_cb=None, cancel_event=cancel_event,
+                log_cb=log, progress_cb=cache_progress, cancel_event=cancel_event,
                 stats_out=cache_stats,
             )
             return {
@@ -8404,6 +8479,8 @@ def cache_build_worker(
                 "cache_stats": cache_stats,
             }
         except CancelledError:
+            with progress_lock:
+                progress_active.discard(item_index)
             return {"status": "cancelled", "item_index": item_index}
         except RuntimeError as e:
             msg = str(e)
@@ -8432,6 +8509,12 @@ def cache_build_worker(
                     break
                 result = fut.result()
                 status_val = result.get("status", "")
+                item_index = int(result.get("item_index", 0) or 0)
+                with progress_lock:
+                    progress_active.discard(item_index)
+                    progress_finished.add(item_index)
+                    if item_index in progress_totals and status_val in ("built", "skipped", "skipped_no_chunks"):
+                        progress_done[item_index] = progress_totals[item_index]
                 if status_val == "built":
                     total_built += 1
                     cstats = result.get("cache_stats")
@@ -8452,10 +8535,12 @@ def cache_build_worker(
                     total_failed += 1
                 elif status_val == "cancelled":
                     pass
+                _emit_progress()
 
         if cancel_event.is_set():
             raise CancelledError("Cancelled during cache build.")
 
+        _emit_progress()
         msgq.put(("cache_done", {
             "built": total_built,
             "skipped": total_skipped,
@@ -12082,11 +12167,17 @@ class App(tk.Tk):
                     eta_str = str(payload.get("eta_str", ""))
                     eta_seconds = payload.get("eta_seconds")
                     active_chunk_progress = float(payload.get("active_chunk_progress", 0.0))
+                    is_cache_phase = payload.get("phase") == "cache" or self.current_task == "cache"
 
                     if total > 0:
-                        self.frames_completed_var.set(f"Completed frames: {completed}")
-                        self.frames_progress_var.set(f"Frames in progress: {in_progress}")
-                        self.frames_total_var.set(f"Total frames: {total}")
+                        if is_cache_phase:
+                            self.frames_completed_var.set(f"Completed caches: {completed}")
+                            self.frames_progress_var.set(f"Caches in progress: {in_progress}")
+                            self.frames_total_var.set(f"Total cache jobs: {total}")
+                        else:
+                            self.frames_completed_var.set(f"Completed frames: {completed}")
+                            self.frames_progress_var.set(f"Frames in progress: {in_progress}")
+                            self.frames_total_var.set(f"Total frames: {total}")
                         if eta_seconds is not None:
                             eta_seconds = float(eta_seconds)
                             if self._eta_ema_seconds is None:
@@ -12153,6 +12244,12 @@ class App(tk.Tk):
                 elif kind == "cache_done":
                     self._set_busy(False)
                     self.current_task = None
+                    self._eta_ema_seconds = None
+                    self._eta_last_display_time = time.monotonic()
+                    self.eta_var.set("Complete")
+                    if hasattr(self, "progress_bar"):
+                        total_jobs = int(payload.get("total", 0) or 0)
+                        self.progress_bar.set_progress(total_jobs, 0, total_jobs, 1.0)
                     problem_files = payload.get("problem_files", []) if isinstance(payload.get("problem_files", []), list) else []
                     if payload.get("cancelled"):
                         self._set_status("Cache build cancelled.", "")
