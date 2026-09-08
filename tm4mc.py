@@ -8344,6 +8344,20 @@ def cache_build_worker(
     total_failed = 0
     problem_files: List[Dict[str, Any]] = []
 
+    # Cache builds are independent per snapshot/dimension, but each build
+    # owns an Amulet world handle. Keep concurrency bounded and conservative
+    # on small-memory machines.
+    cache_concurrency = max(1, min(8, int(os.cpu_count() or 1)))
+    try:
+        import psutil
+        available_gb = float(psutil.virtual_memory().available) / (1024.0 ** 3)
+        if available_gb < 8:
+            cache_concurrency = min(cache_concurrency, 2)
+        elif available_gb < 16:
+            cache_concurrency = min(cache_concurrency, 4)
+    except Exception:
+        pass
+
     def log(msg: str):
         msgq.put(("log", msg))
 
@@ -8418,32 +8432,26 @@ def cache_build_worker(
                     break
                 result = fut.result()
                 status_val = result.get("status", "")
-                with _state_lock:
-                    items_finished[0] += 1
-                    if status_val == "built":
-                        total_built += 1
-                        ct = result.get("chunks_total")
-                        if ct is not None:
-                            known_chunk_totals.append(int(ct))
-                            completed_chunk_units[0] += float(ct)
-                        cstats = result.get("cache_stats")
-                        if isinstance(cstats, dict):
-                            skipped_n = int(cstats.get("chunks_skipped", 0) or 0)
-                            total_n = int(cstats.get("total_chunks", 0) or 0)
-                            if skipped_n > 0 and total_n > 0:
-                                problem_files.append({
-                                    "file": str(result.get("item_label", "")),
-                                    "skipped_chunks": skipped_n,
-                                    "total_chunks": total_n,
-                                    "skipped_percent": float(cstats.get("skipped_percent", 0.0) or 0.0),
-                                    "reasons": dict(cstats.get("skipped_by_reason", {})),
-                                })
-                    elif status_val in ("skipped", "skipped_no_chunks"):
-                        total_skipped += 1
-                    elif status_val == "failed":
-                        total_failed += 1
-                    elif status_val == "cancelled":
-                        pass
+                if status_val == "built":
+                    total_built += 1
+                    cstats = result.get("cache_stats")
+                    if isinstance(cstats, dict):
+                        skipped_n = int(cstats.get("chunks_skipped", 0) or 0)
+                        total_n = int(cstats.get("total_chunks", 0) or 0)
+                        if skipped_n > 0 and total_n > 0:
+                            problem_files.append({
+                                "file": str(result.get("item_label", "")),
+                                "skipped_chunks": skipped_n,
+                                "total_chunks": total_n,
+                                "skipped_percent": float(cstats.get("skipped_percent", 0.0) or 0.0),
+                                "reasons": dict(cstats.get("skipped_by_reason", {})),
+                            })
+                elif status_val in ("skipped", "skipped_no_chunks"):
+                    total_skipped += 1
+                elif status_val == "failed":
+                    total_failed += 1
+                elif status_val == "cancelled":
+                    pass
 
         if cancel_event.is_set():
             raise CancelledError("Cancelled during cache build.")
